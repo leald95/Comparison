@@ -15,7 +15,8 @@ A modern web application to compare endpoints between SentinelOne (EDR) and Ninj
 - **🆕 Automated Remediation**:
   - One-click SentinelOne installation on missing/offline devices
   - Configurable remediation scripts via Settings
-  - Automatic online status checks before script execution
+  - Automatic online status checks - only runs on currently online devices (last contact within 5 minutes)
+  - Real-time execution feedback with progress indicators
 - **Statistics Dashboard**: Quick overview of match rates and counts
 - **Smart Encoding Fix**: Automatically fixes character encoding issues
 - **Beautiful UI**: Modern, dark-themed interface with smooth animations
@@ -85,7 +86,7 @@ A modern web application to compare endpoints between SentinelOne (EDR) and Ninj
 5. **Review results**:
    - **Testing View**: See all devices with status indicators
    - **Remediation**: Click "🛠️ Fix S1" to run the configured script on devices where:
-     - Device is online in NinjaRMM (< 30 days)
+     - Device is **currently online** in NinjaRMM (last contact within 5 minutes)
      - SentinelOne is missing or offline
    - Switch between tabs to see different views:
      - Only in SentinelOne

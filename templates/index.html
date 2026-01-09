@@ -2308,7 +2308,7 @@
                         <span id="settings-script-details"></span>
                     </div>
                     <div class="settings-warning">
-                        ⚠️ <strong>Note:</strong> The remediation script will only run on devices that are online in NinjaRMM (last contact < 30 days).
+                        ⚠️ <strong>Note:</strong> The remediation script will only run on devices that are currently online in NinjaRMM (last contact within 5 minutes).
                     </div>
                 </div>
             </div>
@@ -4322,17 +4322,25 @@
 
             container.innerHTML = items.map(item => {
                 const needsRemediation = item.file2 === 'found' && (item.file1 === 'missing' || item.file1 === 'offline');
-                const isNinjaOnline = item.file2 === 'found';
+                
+                // Check if device is actually online (last contact within 5 minutes)
+                const deviceName = item.rawFile2 || item.sortName;
+                const device = state.ninjaDevices.find(d => d.name === deviceName);
+                const now = Date.now();
+                const fiveMinutesAgo = now - (5 * 60 * 1000);
+                const lastContact = device && device.lastContact ? device.lastContact * 1000 : 0;
+                const isDeviceOnline = lastContact > fiveMinutesAgo;
+                
                 const remediationCell = needsRemediation ? 
                     `<button class="remediation-btn" 
-                            onclick="runRemediation('${escapeHtml(item.rawFile2 || item.sortName)}')" 
-                            ${!isNinjaOnline || !state.remediationScriptId ? 'disabled' : ''}
-                            title="${!state.remediationScriptId ? 'Configure script in Settings' : !isNinjaOnline ? 'Device offline in NinjaRMM' : 'Install SentinelOne'}">
+                            onclick="runRemediation('${escapeHtml(deviceName)}')" 
+                            ${!isDeviceOnline || !state.remediationScriptId ? 'disabled' : ''}
+                            title="${!state.remediationScriptId ? 'Configure script in Settings' : !isDeviceOnline ? 'Device not online in NinjaRMM (last contact > 5 min)' : 'Install SentinelOne'}">
                         🛠️ Fix S1
                     </button>` : '-';
                 
                 return `
-                    <tr data-device-name="${escapeHtml(item.rawFile2 || item.sortName)}">
+                    <tr data-device-name="${escapeHtml(deviceName)}">
                         <td>
                             <div style="display: flex; align-items: center;">
                                 ${item.displayName}
@@ -5032,13 +5040,17 @@
                 return;
             }
 
-            // Check if device is online (last contact < 30 days)
+            // Check if device is currently online (last contact within 5 minutes)
             const now = Date.now();
-            const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
+            const fiveMinutesAgo = now - (5 * 60 * 1000);
             const lastContact = device.lastContact ? device.lastContact * 1000 : 0; // Convert to milliseconds
             
-            if (lastContact < thirtyDaysAgo) {
-                showToast('Device is offline in NinjaRMM (> 30 days)', 'error');
+            if (lastContact < fiveMinutesAgo) {
+                const minutesAgo = Math.floor((now - lastContact) / (60 * 1000));
+                const timeAgo = minutesAgo < 60 ? `${minutesAgo} minutes` : 
+                               minutesAgo < 1440 ? `${Math.floor(minutesAgo / 60)} hours` : 
+                               `${Math.floor(minutesAgo / 1440)} days`;
+                showToast(`Device is not currently online (last contact: ${timeAgo} ago)`, 'error');
                 return;
             }
 

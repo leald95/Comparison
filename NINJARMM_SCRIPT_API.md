@@ -213,8 +213,9 @@ Common errors and their meanings:
 1. **Never expose API credentials** in frontend code
 2. All NinjaRMM API calls are **proxied through the backend** for security
 3. Script execution requires proper **NinjaRMM permissions** (ensure your API credentials have script execution rights)
-4. Consider implementing **rate limiting** for production use
-5. Log all script executions for **audit trails**
+4. **Online status verification**: The frontend verifies devices are currently online (last contact within 5 minutes) before allowing script execution
+5. Consider implementing **rate limiting** for production use
+6. Log all script executions for **audit trails**
 
 ## NinjaRMM API Reference
 

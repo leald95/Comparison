@@ -1068,22 +1068,44 @@ def get_ninjarmm_scripts():
             # Use Legacy API
             auth = (api_key, api_secret)
         
-        # Fetch scripts
-        endpoint = f'{api_url}/v2/queries/scripts'
-        response = requests.get(
-            endpoint,
-            headers=headers,
-            auth=auth,
-            timeout=30
-        )
+        # Fetch scripts - try multiple possible endpoints
+        possible_endpoints = [
+            f'{api_url}/v2/automation/scripts',
+            f'{api_url}/v2/queries/scripts',
+            f'{api_url}/v2/scripts'
+        ]
         
-        if response.status_code != 200:
+        scripts_data = None
+        last_error = None
+        
+        for endpoint in possible_endpoints:
+            try:
+                print(f"DEBUG: Trying scripts endpoint: {endpoint}")
+                response = requests.get(
+                    endpoint,
+                    headers=headers,
+                    auth=auth,
+                    timeout=30
+                )
+                
+                print(f"DEBUG: Response status: {response.status_code}")
+                
+                if response.status_code == 200:
+                    scripts_data = response.json()
+                    print(f"DEBUG: Successfully fetched {len(scripts_data)} scripts from {endpoint}")
+                    break
+                else:
+                    last_error = f"{response.status_code}: {response.text[:200]}"
+                    print(f"DEBUG: Failed with {last_error}")
+            except Exception as e:
+                last_error = str(e)
+                print(f"DEBUG: Exception: {last_error}")
+                continue
+        
+        if scripts_data is None:
             return jsonify({
-                'error': f'NinjaRMM API error: {response.status_code}',
-                'details': response.text
-            }), response.status_code
-        
-        scripts_data = response.json()
+                'error': f'Could not fetch scripts from any endpoint. Last error: {last_error}'
+            }), 404
         
         # Format scripts for easier consumption
         scripts = []
