@@ -1,0 +1,4711 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Endpoint Comparison Tool - SentinelOne vs NinjaRMM</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #0a0e17;
+            --bg-card: #111827;
+            --bg-elevated: #1a2332;
+            --border-subtle: #2a3444;
+            --border-accent: #3b82f6;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #06b6d4;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+            --accent-violet: #8b5cf6;
+            --gradient-primary: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            --gradient-success: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+            --shadow-glow: 0 0 40px rgba(59, 130, 246, 0.15);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-deep);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated background */
+        .bg-pattern {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            background:
+                radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
+        }
+
+        .grid-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            background-image:
+                linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Header */
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            animation: fadeInDown 0.6s ease-out;
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .logo {
+            display: inline-flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .logo-icon {
+            width: 56px;
+            height: 56px;
+            background: var(--gradient-primary);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            box-shadow: var(--shadow-glow);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            font-weight: 300;
+        }
+
+        /* File Upload Section */
+        .upload-section {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 2rem;
+        }
+
+        .client-selection-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            padding: 2.5rem;
+            max-width: 800px;
+            width: 100%;
+            transition: all 0.3s ease;
+            animation: fadeInUp 0.6s ease-out;
+        }
+
+        .card-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin-top: 0.5rem;
+            font-weight: 300;
+        }
+
+        .client-selector-prompt {
+            text-align: center;
+            padding: 3rem 2rem;
+        }
+
+        .selector-icon {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .selector-text {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+        }
+
+        .select-client-main-btn {
+            padding: 1rem 3rem;
+            background: var(--gradient-primary);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+        }
+
+        .select-client-main-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(59, 130, 246, 0.4);
+        }
+
+        .selected-client-display {
+            padding: 2rem 0;
+        }
+
+        .client-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .client-name-large {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 1.8rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .client-icon-large {
+            font-size: 2.5rem;
+        }
+
+        .change-client-main-btn {
+            padding: 0.75rem 1.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .change-client-main-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--accent-blue);
+        }
+
+        .comparison-status {
+            background: var(--bg-elevated);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .status-step {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 1.1rem;
+        }
+
+        .status-icon {
+            font-size: 1.5rem;
+        }
+
+        .status-text {
+            color: var(--text-secondary);
+        }
+
+        .sources-summary {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        .source-summary-card {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .source-summary-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .source-summary-count {
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            font-weight: 500;
+        }
+
+        @media (max-width: 900px) {
+            .upload-section {
+                padding: 0 1rem;
+            }
+
+            .sources-summary {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .file-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            padding: 2rem;
+            transition: all 0.3s ease;
+            animation: fadeInUp 0.6s ease-out;
+            animation-fill-mode: both;
+        }
+
+        .file-card:nth-child(1) {
+            animation-delay: 0.1s;
+        }
+
+        .file-card:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .file-card:hover {
+            border-color: var(--border-accent);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .file-card.uploaded {
+            border-color: var(--accent-emerald);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-number {
+            width: 32px;
+            height: 32px;
+            background: var(--gradient-primary);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        /* Drop Zone */
+        .drop-zone {
+            border: 2px dashed var(--border-subtle);
+            border-radius: 16px;
+            padding: 3rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(59, 130, 246, 0.02);
+        }
+
+        .drop-zone:hover,
+        .drop-zone.dragover {
+            border-color: var(--accent-blue);
+            background: rgba(59, 130, 246, 0.08);
+        }
+
+        .drop-zone-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.8;
+        }
+
+        .drop-zone-text {
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .drop-zone-hint {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .drop-zone-divider {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin: 1.5rem 0;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .drop-zone-divider::before,
+        .drop-zone-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border-subtle);
+        }
+
+        .s1-fetch-btn {
+            width: 100%;
+            padding: 0.875rem 1.5rem;
+            background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .s1-fetch-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+        }
+
+        .s1-fetch-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .s1-fetch-btn .spinner {
+            display: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .s1-fetch-btn.loading .spinner {
+            display: block;
+        }
+
+        .s1-fetch-btn.loading .btn-text {
+            display: none;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        /* Advanced API Toggle */
+        .advanced-toggle-btn {
+            width: 100%;
+            padding: 0.5rem;
+            margin-top: 0.5rem;
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .advanced-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.03);
+            border-color: var(--border-accent);
+            color: var(--text-primary);
+        }
+
+        .advanced-api-options {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        /* File Info (shown after upload) */
+        .file-info {
+            display: none;
+            background: var(--bg-elevated);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .file-info.visible {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        .file-name {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--accent-emerald);
+            margin-bottom: 0.5rem;
+        }
+
+        .file-name-text {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .change-file-btn {
+            padding: 0.4rem 0.8rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .change-file-btn:hover {
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .file-meta {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        /* Select Dropdowns */
+        .select-group {
+            margin-bottom: 1rem;
+        }
+
+        .select-label {
+            display: block;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        select {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            padding-right: 2.5rem;
+        }
+
+        select:hover {
+            border-color: var(--accent-blue);
+        }
+
+        select:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+
+        select:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Compare Button */
+        .compare-section {
+            text-align: center;
+            margin-bottom: 3rem;
+            animation: fadeInUp 0.6s ease-out 0.3s both;
+        }
+
+        .compare-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem 3rem;
+            background: var(--gradient-primary);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+        }
+
+        .compare-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 30px rgba(59, 130, 246, 0.4);
+        }
+
+        .compare-btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .compare-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .compare-btn .spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .compare-btn.loading .spinner {
+            display: block;
+        }
+
+        .compare-btn.loading .btn-text {
+            display: none;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Results Section */
+        .results-section {
+            display: none;
+        }
+
+        .results-section.visible {
+            display: block;
+            animation: fadeInUp 0.5s ease-out;
+        }
+
+        .new-comparison-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+        }
+
+        .new-comparison-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            border-color: var(--border-accent);
+            transform: translateY(-2px);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value.blue {
+            color: var(--accent-blue);
+        }
+
+        .stat-value.cyan {
+            color: var(--accent-cyan);
+        }
+
+        .stat-value.emerald {
+            color: var(--accent-emerald);
+        }
+
+        .stat-value.amber {
+            color: var(--accent-amber);
+        }
+
+        .stat-value.rose {
+            color: var(--accent-rose);
+        }
+
+        .stat-value.violet {
+            color: var(--accent-violet);
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* Tab Navigation */
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            background: var(--bg-card);
+            padding: 0.5rem;
+            border-radius: 14px;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 0.875rem 1.5rem;
+            background: transparent;
+            border: none;
+            border-radius: 10px;
+            color: var(--text-secondary);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-primary);
+            background: var(--bg-elevated);
+        }
+
+        .tab-btn.active {
+            background: var(--gradient-primary);
+            color: white;
+        }
+
+        .tab-count {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 24px;
+            height: 24px;
+            padding: 0 6px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            font-size: 0.8rem;
+            margin-left: 0.5rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .tab-btn:not(.active) .tab-count {
+            background: var(--bg-deep);
+        }
+
+        /* Tab Content */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Data Table */
+        .data-table-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 1rem 1.25rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .data-table th {
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            position: sticky;
+            top: 0;
+        }
+
+        .data-table tbody tr:hover {
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .data-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .data-table td {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+        }
+
+        .match-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .match-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .match-dot.match {
+            background: var(--accent-emerald);
+        }
+
+        .match-dot.no-match {
+            background: var(--accent-rose);
+        }
+
+        .table-scroll {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        /* Value Lists */
+        .value-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            padding: 1.5rem;
+        }
+
+        .value-tag {
+            padding: 0.5rem 1rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            transition: all 0.2s ease;
+        }
+
+        .value-tag:hover {
+            border-color: var(--accent-blue);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .value-tag.file1 {
+            border-color: var(--accent-cyan);
+            background: rgba(6, 182, 212, 0.1);
+        }
+
+        .value-tag.file2 {
+            border-color: var(--accent-amber);
+            background: rgba(245, 158, 11, 0.1);
+        }
+
+        .value-tag.common {
+            border-color: var(--accent-emerald);
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .value-tag.offline {
+            border-color: var(--accent-rose);
+            background: linear-gradient(135deg, rgba(244, 63, 94, 0.2) 0%, rgba(239, 68, 68, 0.15) 100%);
+            position: relative;
+        }
+
+        .value-tag.offline::before {
+            content: '⚠️';
+            margin-right: 0.25rem;
+            font-size: 0.75rem;
+        }
+
+        .value-tag.prefix {
+            border-color: var(--accent-violet);
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(139, 92, 246, 0.1) 100%);
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .prefix-pair {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .prefix-arrow {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+
+        .prefix-match-explanation {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem;
+            background: rgba(139, 92, 246, 0.05);
+            border: 1px solid rgba(139, 92, 246, 0.1);
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .prefix-match-explanation .info-icon {
+            font-size: 1.25rem;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-muted);
+        }
+
+        /* Export Button */
+        .export-btn {
+            padding: 0.875rem 1.75rem;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .export-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+        }
+
+        .export-btn:active {
+            transform: translateY(0);
+        }
+
+        .results-header {
+            margin-bottom: 1rem;
+        }
+
+        .results-header .stats-grid {
+            margin-bottom: 1rem;
+        }
+
+        .export-btn-container {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        /* Toast Messages */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            padding: 1rem 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            color: var(--text-primary);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .toast.error {
+            border-color: var(--accent-rose);
+        }
+
+        .toast.success {
+            border-color: var(--accent-emerald);
+        }
+
+        /* Header Actions */
+        .header-actions {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .refresh-source-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-top: 0.5rem;
+        }
+
+        .refresh-source-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .refresh-source-btn .spinner {
+            width: 12px;
+            height: 12px;
+            border-width: 2px;
+        }
+
+        .quick-load-btn {
+            padding: 0.75rem 1.5rem;
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 12px;
+            color: var(--accent-blue);
+            font-family: 'Outfit', sans-serif;
+            font-weight: 500;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .quick-load-btn.visible {
+            display: inline-flex;
+        }
+
+        .quick-load-btn:hover {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: var(--accent-blue);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+        }
+
+        /* History Button */
+        .history-btn {
+            padding: 0.75rem 1.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            color: var(--text-secondary);
+            font-family: 'Outfit', sans-serif;
+            font-weight: 500;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .history-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+            border-color: var(--accent-violet);
+            transform: translateY(-2px);
+        }
+
+        /* History Modal Specifics */
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .history-item {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            transition: all 0.2s ease;
+        }
+
+        .history-item:hover {
+            border-color: var(--accent-violet);
+            background: rgba(139, 92, 246, 0.05);
+        }
+
+        .history-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .history-item-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 1.05rem;
+        }
+
+        .history-item-time {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .history-item-stats {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .history-stat {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .history-item-actions {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 0.25rem;
+        }
+
+        .history-action-btn {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+        }
+
+        .history-load-btn {
+            background: var(--gradient-primary);
+            color: white;
+            flex: 1;
+        }
+
+        .history-load-btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .history-delete-btn {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--accent-rose);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .history-delete-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+        }
+
+        /* Offline Devices Section */
+        .offline-section {
+            margin-top: 2rem;
+            background: var(--bg-card);
+            border: 1px solid var(--accent-amber);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .offline-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem 1.5rem;
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%);
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .offline-header:hover {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.1) 100%);
+        }
+
+        .offline-icon {
+            font-size: 1.25rem;
+        }
+
+        .offline-title {
+            flex: 1;
+            font-weight: 600;
+            color: var(--accent-amber);
+        }
+
+        .offline-toggle {
+            color: var(--text-muted);
+            transition: transform 0.3s ease;
+        }
+
+        .offline-section.collapsed .offline-toggle {
+            transform: rotate(-90deg);
+        }
+
+        .offline-content {
+            padding: 1rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .offline-section.collapsed .offline-content {
+            display: none;
+        }
+
+        .offline-source {
+            background: var(--bg-elevated);
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        .offline-source-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .offline-source-count {
+            background: var(--accent-amber);
+            color: #000;
+            padding: 0.125rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .offline-device-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .offline-device-item {
+            display: flex;
+            flex-direction: column;
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-radius: 8px;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.85rem;
+        }
+
+        .offline-device-name {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .offline-device-date {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        /* Column Preview */
+        .column-preview {
+            display: none;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-accent);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-top: 0.75rem;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .column-preview.visible {
+            display: block;
+        }
+
+        .preview-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--accent-blue);
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .preview-stats {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .preview-values {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .preview-item {
+            padding: 0.5rem 0.75rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+        }
+
+        /* Site Selection Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.visible {
+            display: flex;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .modal-close {
+            width: 32px;
+            height: 32px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close:hover {
+            border-color: var(--accent-rose);
+            color: var(--accent-rose);
+        }
+
+        .site-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .site-search {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            margin-bottom: 1rem;
+        }
+
+        .site-search:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+
+        .site-item {
+            padding: 1rem 1.25rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .site-item.hidden {
+            display: none;
+        }
+
+        .site-item:hover {
+            border-color: var(--accent-blue);
+            background: rgba(59, 130, 246, 0.1);
+            transform: translateX(4px);
+        }
+
+        .site-item.client-matched {
+            border-left: 3px solid var(--accent-emerald);
+        }
+
+        .site-item.client-unmatched {
+            border-left: 3px solid var(--accent-amber);
+            opacity: 0.8;
+        }
+
+        .client-status-icons {
+            margin-right: 0.5rem;
+            font-size: 1.1rem;
+        }
+
+        .unified-stats {
+            display: flex;
+            gap: 1rem;
+            padding: 1rem;
+            background: var(--bg-elevated);
+            border-radius: 10px;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            padding: 0.5rem 1rem;
+            background: var(--bg-card);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .site-icon {
+            font-size: 1.25rem;
+        }
+
+        .site-name {
+            font-weight: 500;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+        }
+
+        .modal-loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+        }
+
+        .modal-loading .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border-subtle);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-deep);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-subtle);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* Testing View Table */
+        .testing-view-container {
+            padding: 1rem;
+        }
+
+        .testing-search-wrapper {
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+
+        .testing-search {
+            width: 100%;
+            background: var(--bg-deep);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 0.75rem 1rem 0.75rem 2.5rem;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: all 0.2s;
+        }
+
+        .testing-search:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+        }
+
+        .testing-search-icon {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        .testing-table-wrapper {
+            max-height: 600px;
+            overflow-y: auto;
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            background: var(--bg-card);
+        }
+
+        .testing-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        .testing-table th {
+            position: sticky;
+            top: 0;
+            background: var(--bg-deep);
+            padding: 1rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 2px solid var(--border-subtle);
+            z-index: 10;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s;
+        }
+
+        .testing-table th:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+        }
+
+        .testing-table th::after {
+            content: '↕️';
+            margin-left: 0.5rem;
+            font-size: 0.7rem;
+            opacity: 0.3;
+        }
+
+        .testing-table th.sort-asc::after {
+            content: '🔼';
+            opacity: 1;
+        }
+
+        .testing-table th.sort-desc::after {
+            content: '🔽';
+            opacity: 1;
+        }
+
+        .testing-table td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-subtle);
+            color: var(--text-primary);
+            font-family: 'Consolas', monospace;
+            font-size: 0.9rem;
+        }
+
+        .testing-table tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .status-found {
+            background: rgba(16, 185, 129, 0.1);
+            color: #34d399;
+        }
+
+        .status-missing {
+            background: rgba(244, 63, 94, 0.1);
+            color: #fb7185;
+        }
+
+        .status-offline {
+            background: rgba(245, 158, 11, 0.1);
+            color: #fbbf24;
+        }
+
+        .device-link-icon {
+            color: var(--accent-violet);
+            font-size: 0.8rem;
+            margin-left: 0.5rem;
+        }
+
+        /* Cache Indicators */
+        .cache-badge {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.125rem 0.5rem;
+            border-radius: 12px;
+            margin-left: auto;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .cache-prompt {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-card);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem;
+            text-align: center;
+            z-index: 100;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .cache-prompt.visible {
+            display: flex;
+        }
+
+        .cache-prompt-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .cache-prompt-title {
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        .cache-prompt-text {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+            max-width: 300px;
+        }
+
+        .cache-actions {
+            display: flex;
+            gap: 1rem;
+            width: 100%;
+            max-width: 350px;
+        }
+
+        .cache-btn {
+            flex: 1;
+            padding: 0.75rem;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .cache-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .cache-btn .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        .cache-load-btn {
+            background: var(--gradient-primary);
+            color: white;
+        }
+
+        .cache-fetch-btn {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            border: 1px solid var(--border-subtle);
+        }
+
+        .cache-fetch-btn:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Testing View Grouping */
+        .testing-device-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            padding: 0.25rem 0;
+        }
+
+        .testing-device-sub {
+            display: flex;
+            align-items: center;
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+
+        .source-indicator {
+            font-size: 0.65rem;
+            font-weight: 800;
+            padding: 1px 4px;
+            border-radius: 4px;
+            margin-right: 0.5rem;
+            min-width: 20px;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .source-indicator.s1 {
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .source-indicator.ninja {
+            background: rgba(139, 92, 246, 0.2);
+            color: #a78bfa;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bg-pattern"></div>
+    <div class="grid-overlay"></div>
+
+    <div class="container">
+        <header>
+            <div class="logo">
+                <div class="logo-icon">🔄</div>
+                <h1>Endpoint Comparison Tool</h1>
+            </div>
+            <p class="subtitle">Compare SentinelOne and NinjaRMM endpoints to identify discrepancies across platforms</p>
+            <div class="header-actions">
+                <button type="button" class="quick-load-btn" id="quick-load-btn">
+                    <span>⚡ Load Last Sources</span>
+                </button>
+                <button type="button" class="history-btn" id="history-btn">
+                    ⏳ History
+                </button>
+            </div>
+        </header>
+
+        <section class="results-section" id="results-section">
+            <div class="results-controls" style="text-align: center; margin-bottom: 1rem;">
+                <button type="button" class="new-comparison-btn" id="new-comparison-btn"
+                    style="padding: 0.75rem 1.5rem; background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); border: none; border-radius: 12px; color: white; font-weight: 600; cursor: pointer; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); transition: all 0.3s ease;">
+                    🏠 Back to Client Selection
+                </button>
+            </div>
+
+            <div class="stats-grid" id="stats-grid">
+                <!-- Stats will be inserted here -->
+            </div>
+
+            <div class="export-btn-container">
+                <button type="button" class="export-btn" id="export-btn">
+                    <span>📥 Export to HTML</span>
+                </button>
+            </div>
+
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="only-file1">
+                    Only in File 1
+                    <span class="tab-count" id="tab-count-file1">0</span>
+                </button>
+                <button class="tab-btn" data-tab="only-file2">
+                    Only in File 2
+                    <span class="tab-count" id="tab-count-file2">0</span>
+                </button>
+                <button class="tab-btn" data-tab="common">
+                    Common Values
+                    <span class="tab-count" id="tab-count-common">0</span>
+                </button>
+                <button class="tab-btn" data-tab="prefix-matches">
+                    🔗 Prefix Matches
+                    <span class="tab-count" id="tab-count-prefix">0</span>
+                </button>
+                <button class="tab-btn" data-tab="testing-view">
+                    🧪 Testing View
+                </button>
+            </div>
+
+            <div class="tab-content active" id="tab-only-file1">
+                <div class="data-table-container">
+                    <div class="value-list" id="only-file1-list"></div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-only-file2">
+                <div class="data-table-container">
+                    <div class="value-list" id="only-file2-list"></div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-common">
+                <div class="data-table-container">
+                    <div class="value-list" id="common-list"></div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-prefix-matches">
+                <div class="data-table-container">
+                    <div class="prefix-match-explanation">
+                        <span class="info-icon">ℹ️</span>
+                        <p>These devices matched using the first 15 characters (handles truncation limitations in
+                            NinjaRMM).</p>
+                    </div>
+                    <div class="value-list" id="prefix-list"></div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-testing-view">
+                <div class="testing-view-container">
+                    <div class="testing-search-wrapper">
+                        <span class="testing-search-icon">🔍</span>
+                        <input type="text" class="testing-search" id="testing-search"
+                            placeholder="Search devices in testing view...">
+                    </div>
+                    <div class="testing-table-wrapper">
+                        <table class="testing-table">
+                            <thead>
+                                <tr>
+                                    <th data-sort="name" id="testing-header-name">Device Name</th>
+                                    <th data-sort="file1" id="testing-header-file1">Source 1 Status</th>
+                                    <th data-sort="file2" id="testing-header-file2">Source 2 Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="testing-table-body">
+                                <!-- Devices will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Offline Devices Section -->
+            <div class="offline-section collapsed" id="offline-section" style="display: none;">
+                <div class="offline-header" onclick="toggleOfflineSection()">
+                    <span class="offline-icon">⚠️</span>
+                    <span class="offline-title">Devices Offline > 30 Days</span>
+                    <span class="offline-toggle" id="offline-toggle">▼</span>
+                </div>
+                <div class="offline-content" id="offline-content">
+                    <div class="offline-source" id="offline-source-1"></div>
+                    <div class="offline-source" id="offline-source-2"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="upload-section">
+            <!-- Single Client Selection -->
+            <div class="client-selection-card">
+                <div class="card-header">
+                    <h2 class="card-title">📊 Select Client to Compare</h2>
+                    <p class="card-subtitle">Choose a client to automatically compare data from both SentinelOne and NinjaRMM</p>
+                </div>
+
+                <div class="client-selector-prompt" id="client-selector-prompt">
+                    <div class="selector-icon">☁️</div>
+                    <p class="selector-text">Select a client to begin comparison</p>
+                    <button type="button" class="select-client-main-btn" id="select-client-main-btn">
+                        <span class="btn-text">Choose Client</span>
+                    </button>
+                </div>
+
+                <div class="selected-client-display" id="selected-client-display" style="display: none;">
+                    <div class="client-header-row">
+                        <div class="client-name-large">
+                            <span class="client-icon-large">👤</span>
+                            <span id="selected-client-name">Client Name</span>
+                        </div>
+                        <button type="button" class="change-client-main-btn" id="change-client-main-btn">Change Client</button>
+                    </div>
+
+                    <div class="comparison-status" id="comparison-status">
+                        <div class="status-step" id="status-fetching">
+                            <span class="status-icon">⏳</span>
+                            <span class="status-text">Fetching data from APIs...</span>
+                        </div>
+                        <div class="status-step" id="status-comparing" style="display: none;">
+                            <span class="status-icon">⚡</span>
+                            <span class="status-text">Comparing data...</span>
+                        </div>
+                        <div class="status-step" id="status-complete" style="display: none;">
+                            <span class="status-icon">✅</span>
+                            <span class="status-text">Comparison complete!</span>
+                        </div>
+                    </div>
+
+                    <div class="sources-summary" id="sources-summary" style="display: none;">
+                        <div class="source-summary-card">
+                            <div class="source-summary-header">
+                                <span class="source-icon">🛡️</span>
+                                <span class="source-name">SentinelOne</span>
+                            </div>
+                            <div class="source-summary-count" id="s1-count">0 endpoints</div>
+                        </div>
+                        <div class="source-summary-card">
+                            <div class="source-summary-header">
+                                <span class="source-icon">🥷</span>
+                                <span class="source-name">NinjaRMM</span>
+                            </div>
+                            <div class="source-summary-count" id="ninja-count">0 devices</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Site Selection Modal -->
+    <div class="modal-overlay" id="site-modal">
+        <div class="modal" id="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Select Site</h2>
+                <button type="button" class="modal-close" id="modal-close">✕</button>
+            </div>
+            <div id="site-modal-content">
+                <div class="modal-loading">
+                    <div class="spinner"></div>
+                    <p>Loading sites...</p>
+                </div>
+            </div>
+            <div id="site-cache-prompt" class="cache-prompt">
+                <div class="cache-prompt-icon">💾</div>
+                <div class="cache-prompt-title">Cached Data Found</div>
+                <div class="cache-prompt-text" id="site-cache-text">Cached data found from [Time]. Use cached or pull
+                    fresh?</div>
+                <div class="cache-actions">
+                    <button class="cache-btn cache-fetch-btn" id="site-fetch-fresh">Fetch Fresh</button>
+                    <button class="cache-btn cache-load-btn" id="site-load-cached">Load Cached</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Organization Selection Modal for NinjaRMM -->
+    <div class="modal-overlay" id="ninja-modal">
+        <div class="modal" id="ninja-modal-content-wrapper">
+            <div class="modal-header">
+                <h2 class="modal-title">Select Organization</h2>
+                <button type="button" class="modal-close" id="ninja-modal-close">✕</button>
+            </div>
+            <div id="ninja-modal-content">
+                <div class="modal-loading">
+                    <div class="spinner"></div>
+                    <p>Loading organizations...</p>
+                </div>
+            </div>
+            <div id="ninja-cache-prompt" class="cache-prompt">
+                <div class="cache-prompt-icon">💾</div>
+                <div class="cache-prompt-title">Cached Data Found</div>
+                <div class="cache-prompt-text" id="ninja-cache-text">Cached data found from [Time]. Use cached or pull
+                    fresh?</div>
+                <div class="cache-actions">
+                    <button class="cache-btn cache-fetch-btn" id="ninja-fetch-fresh">Fetch Fresh</button>
+                    <button class="cache-btn cache-load-btn" id="ninja-load-cached">Load Cached</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Unified Client Selection Modal -->
+    <div class="modal-overlay" id="unified-client-modal">
+        <div class="modal" id="unified-client-modal-content-wrapper">
+            <div class="modal-header">
+                <h2 class="modal-title">Select Client</h2>
+                <button type="button" class="modal-close" id="unified-client-modal-close">✕</button>
+            </div>
+            <div id="unified-client-modal-content">
+                <div class="modal-loading">
+                    <div class="spinner"></div>
+                    <p>Loading clients...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Comparison History Modal -->
+    <div class="modal-overlay" id="history-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">Comparison History</h2>
+                <button type="button" class="modal-close" id="history-modal-close">✕</button>
+            </div>
+            <div class="history-list" id="history-list">
+                <!-- History items will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        const state = {
+            file1: { uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] },
+            file2: { uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] },
+            currentFileIdForS1: null,
+            pendingCacheChoice: null,
+            testingViewSort: { field: 'name', direction: 'asc' },
+            clientName: null,
+            lastHistorySave: null  // Track last save timestamp to prevent duplicates
+        };
+
+        // Last Source Config
+        function saveLastSourceConfig(fileId, type, id, name) {
+            let config = {};
+            const saved = localStorage.getItem('lastSourceConfig');
+            if (saved) {
+                try { config = JSON.parse(saved); } catch (e) { config = {}; }
+            }
+
+            config[`file${fileId}`] = { type, id, name };
+            localStorage.setItem('lastSourceConfig', JSON.stringify(config));
+
+            updateQuickLoadButton();
+        }
+
+        function updateQuickLoadButton() {
+            const btn = document.getElementById('quick-load-btn');
+            const saved = localStorage.getItem('lastSourceConfig');
+            const resultsSection = document.getElementById('results-section');
+
+            // Only show if:
+            // 1. Config exists
+            // 2. Nothing is loaded/uploaded
+            // 3. Results are not currently visible (on client selection page)
+            const nothingLoaded = !state.file1.uploaded && !state.file2.uploaded;
+            const resultsVisible = resultsSection && resultsSection.classList.contains('visible');
+
+            if (saved && nothingLoaded && !resultsVisible) {
+                try {
+                    const config = JSON.parse(saved);
+                    if (config.file1 || config.file2) {
+                        btn.classList.add('visible');
+
+                        // Update button text with client name or source name
+                        let buttonText = "⚡ ";
+                        if (config.file1 && config.file1.name) {
+                            // Extract just the client/site name (remove "Endpoints" or "Devices")
+                            const cleanName = config.file1.name.replace(' Endpoints', '').replace(' Devices', '');
+                            buttonText += `Load ${cleanName}`;
+                        } else if (config.file2 && config.file2.name) {
+                            const cleanName = config.file2.name.replace(' Endpoints', '').replace(' Devices', '');
+                            buttonText += `Load ${cleanName}`;
+                        } else {
+                            buttonText += "Load Last Source";
+                        }
+                        
+                        btn.querySelector('span').textContent = buttonText;
+
+                        // Set tooltip/title
+                        let label = "Load: ";
+                        if (config.file1) label += config.file1.name;
+                        if (config.file1 && config.file2) label += " & ";
+                        if (config.file2) label += config.file2.name;
+                        btn.title = label;
+                        return;
+                    }
+                } catch (e) {
+                    console.error('Failed to parse lastSourceConfig:', e);
+                }
+            }
+            btn.classList.remove('visible');
+        }
+
+        async function loadLastSources() {
+            const saved = localStorage.getItem('lastSourceConfig');
+            if (!saved) return;
+
+            try {
+                const config = JSON.parse(saved);
+                console.log('DEBUG loadLastSources: Loaded config =', config);
+
+                if (config.file1) {
+                    console.log(`DEBUG loadLastSources: File1 - Type: ${config.file1.type}, ID: ${config.file1.id}, Name: ${config.file1.name}`);
+                    if (config.file1.type === 'SentinelOne') {
+                        await selectSite(config.file1.id, config.file1.name, '1', true);
+                    } else if (config.file1.type === 'NinjaRMM') {
+                        await selectNinjaOrganization(config.file1.id, config.file1.name, '1', true);
+                    }
+                }
+
+                if (config.file2) {
+                    console.log(`DEBUG loadLastSources: File2 - Type: ${config.file2.type}, ID: ${config.file2.id}, Name: ${config.file2.name}`);
+                    if (config.file2.type === 'SentinelOne') {
+                        await selectSite(config.file2.id, config.file2.name, '2', true);
+                    } else if (config.file2.type === 'NinjaRMM') {
+                        await selectNinjaOrganization(config.file2.id, config.file2.name, '2', true);
+                    }
+                }
+
+                showToast('Last selected sources loaded', 'success');
+            } catch (e) {
+                console.error('Failed to load last sources:', e);
+                showToast('Failed to load last sources', 'error');
+            }
+        }
+
+        // Cache Helpers
+        function getCache(source, id) {
+            const key = `api_cache_${source}_${id}`;
+            const cached = localStorage.getItem(key);
+            if (!cached) return null;
+            try { return JSON.parse(cached); } catch (e) { return null; }
+        }
+
+        function setCache(source, id, name, data) {
+            const key = `api_cache_${source}_${id}`;
+            const cacheObj = {
+                timestamp: Date.now(),
+                name: name,
+                data: data
+            };
+            localStorage.setItem(key, JSON.stringify(cacheObj));
+        }
+
+        function clearCache(source, id) {
+            localStorage.removeItem(`api_cache_${source}_${id}`);
+        }
+
+        // Utility functions
+        function showToast(message, type = 'info', duration = 4000, onClick = null) {
+            const existing = document.querySelector('.toast');
+            if (existing) existing.remove();
+
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.style.cursor = onClick ? 'pointer' : 'default';
+            toast.innerHTML = `
+                <span>${type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️'}</span>
+                <span>${message}</span>
+            `;
+
+            if (onClick) {
+                toast.addEventListener('click', () => {
+                    onClick();
+                    toast.remove();
+                });
+            }
+
+            document.body.appendChild(toast);
+
+            setTimeout(() => toast.remove(), duration);
+        }
+
+        function updateCompareButton() {
+            // No longer needed - comparison happens automatically
+            // Keeping as stub to avoid errors from existing calls
+        }
+
+        function toggleOfflineSection() {
+            const offlineSection = document.getElementById('offline-section');
+            offlineSection.classList.toggle('collapsed');
+        }
+
+        function formatLastSeen(dateStr) {
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+
+            if (diffDays < 60) return `${diffDays} days ago`;
+            if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
+            return `${Math.floor(diffDays / 365)} years ago`;
+        }
+
+        function renderOfflineDevices() {
+            const offlineSection = document.getElementById('offline-section');
+            const source1Container = document.getElementById('offline-source-1');
+            const source2Container = document.getElementById('offline-source-2');
+
+            const offline1 = state.file1.offlineDevices || [];
+            const offline2 = state.file2.offlineDevices || [];
+            const source1Name = state.file1.sourceType || 'File 1';
+            const source2Name = state.file2.sourceType || 'File 2';
+
+            // Only show section if there are offline devices
+            if (offline1.length === 0 && offline2.length === 0) {
+                offlineSection.style.display = 'none';
+                return;
+            }
+
+            offlineSection.style.display = 'block';
+
+            // Render source 1
+            if (offline1.length > 0) {
+                source1Container.innerHTML = `
+                    <div class="offline-source-header">
+                        <span>${source1Name === 'SentinelOne' ? '🛡️' : '🥷'} ${source1Name}</span>
+                        <span class="offline-source-count">${offline1.length}</span>
+                    </div>
+                    <div class="offline-device-list">
+                        ${offline1.map(dev => `
+                            <div class="offline-device-item">
+                                <span class="offline-device-name">${escapeHtml(dev.name)}</span>
+                                <span class="offline-device-date">${formatLastSeen(dev.lastSeen)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else {
+                source1Container.innerHTML = '';
+            }
+
+            // Render source 2
+            if (offline2.length > 0) {
+                source2Container.innerHTML = `
+                    <div class="offline-source-header">
+                        <span>${source2Name === 'SentinelOne' ? '🛡️' : '🥷'} ${source2Name}</span>
+                        <span class="offline-source-count">${offline2.length}</span>
+                    </div>
+                    <div class="offline-device-list">
+                        ${offline2.map(dev => `
+                            <div class="offline-device-item">
+                                <span class="offline-device-name">${escapeHtml(dev.name)}</span>
+                                <span class="offline-device-date">${formatLastSeen(dev.lastSeen)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else {
+                source2Container.innerHTML = '';
+            }
+        }
+
+        // Modal Management
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.add('visible');
+            document.body.style.overflow = 'hidden';
+            if (modalId === 'history-modal') renderHistory();
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('visible');
+            document.body.style.overflow = '';
+        }
+
+        // History Management
+        function getHistory() {
+            try {
+                return JSON.parse(localStorage.getItem('comparisonHistory') || '[]');
+            } catch (e) {
+                console.error('Error reading history:', e);
+                return [];
+            }
+        }
+
+        function saveToHistory(data) {
+            try {
+                // Prevent duplicate saves within same second
+                const now = Date.now();
+                if (state.lastHistorySave && (now - state.lastHistorySave < 1000)) {
+                    console.log('Skipping duplicate history save (< 1 second since last save)');
+                    return;
+                }
+                state.lastHistorySave = now;
+
+                let history = getHistory();
+
+                // Construct a descriptive title with client name if available
+                const clientName = state.clientName || '';
+                const displayName1 = state.file1.sourceType ||
+                    (state.file1.filename?.includes('Endpoints') ? 'SentinelOne' : 'File 1');
+                const displayName2 = state.file2.sourceType ||
+                    (state.file2.filename?.includes('Devices') ? 'NinjaRMM' : 'File 2');
+
+                const title = clientName 
+                    ? `${clientName} - ${displayName1} vs ${displayName2}`
+                    : `${displayName1} vs ${displayName2}`;
+
+                // Check for existing entry with same client/sources
+                const isDuplicate = (item) => {
+                    // Normalize values for comparison (handle null/undefined)
+                    const itemClient = (item.clientName || '').trim();
+                    const currentClient = (clientName || '').trim();
+                    const itemSource1 = (item.file1Source || '').trim();
+                    const currentSource1 = (state.file1.sourceType || '').trim();
+                    const itemSource2 = (item.file2Source || '').trim();
+                    const currentSource2 = (state.file2.sourceType || '').trim();
+                    
+                    // Match by client name and source types
+                    return itemClient === currentClient &&
+                           itemSource1 === currentSource1 &&
+                           itemSource2 === currentSource2;
+                };
+
+                // Remove any duplicate entries (update instead of duplicate)
+                const beforeCount = history.length;
+                history = history.filter(item => !isDuplicate(item));
+                const afterCount = history.length;
+
+                console.log('Saving to history:', {
+                    clientName,
+                    file1Source: state.file1.sourceType,
+                    file2Source: state.file2.sourceType,
+                    duplicatesRemoved: beforeCount - afterCount
+                });
+
+                const newEntry = {
+                    id: Date.now().toString(),
+                    timestamp: Date.now(),
+                    title: title,
+                    clientName: clientName,
+                    data: data,
+                    file1Name: state.file1.filename,
+                    file2Name: state.file2.filename,
+                    file1Source: state.file1.sourceType,
+                    file2Source: state.file2.sourceType,
+                    file1Offline: state.file1.offlineDevices,
+                    file2Offline: state.file2.offlineDevices
+                };
+
+                history.unshift(newEntry);
+
+                // Limit to 10 entries
+                if (history.length > 10) history = history.slice(0, 10);
+
+                localStorage.setItem('comparisonHistory', JSON.stringify(history));
+                return newEntry.id;
+            } catch (e) {
+                console.error('Error saving to history:', e);
+            }
+        }
+
+        function deleteHistoryItem(id, event) {
+            if (event) event.stopPropagation();
+
+            let history = getHistory();
+            history = history.filter(item => item.id !== id);
+            localStorage.setItem('comparisonHistory', JSON.stringify(history));
+            renderHistory();
+
+            if (history.length === 0) {
+                showToast('History cleared', 'info');
+            }
+        }
+
+        function cleanupDuplicateHistory() {
+            // Remove duplicate entries from history (keeps most recent)
+            try {
+                let history = getHistory();
+                const seen = new Map(); // key: "clientName|source1|source2", value: most recent entry
+                
+                history.forEach(item => {
+                    const key = `${(item.clientName || '').trim()}|${(item.file1Source || '').trim()}|${(item.file2Source || '').trim()}`;
+                    const existing = seen.get(key);
+                    
+                    if (!existing || item.timestamp > existing.timestamp) {
+                        seen.set(key, item);
+                    }
+                });
+                
+                // Convert back to array, sorted by timestamp descending
+                const cleaned = Array.from(seen.values()).sort((a, b) => b.timestamp - a.timestamp);
+                
+                if (cleaned.length < history.length) {
+                    localStorage.setItem('comparisonHistory', JSON.stringify(cleaned));
+                    console.log(`Cleaned ${history.length - cleaned.length} duplicate history entries`);
+                    return history.length - cleaned.length;
+                }
+                return 0;
+            } catch (e) {
+                console.error('Error cleaning history:', e);
+                return 0;
+            }
+        }
+
+        function loadHistoryItem(id) {
+            const history = getHistory();
+            const item = history.find(i => i.id === id);
+
+            if (!item) {
+                showToast('Results not found in history', 'error');
+                return;
+            }
+
+            // Restore state enough for rendering
+            state.file1.filename = item.file1Name;
+            state.file2.filename = item.file2Name;
+            state.file1.sourceType = item.file1Source;
+            state.file2.sourceType = item.file2Source;
+            state.file1.offlineDevices = item.file1Offline || [];
+            state.file2.offlineDevices = item.file2Offline || [];
+
+            state.file1.uploaded = true;
+            state.file2.uploaded = true;
+
+            displayResults(item.data, true);
+            closeModal('history-modal');
+            showToast('Loaded results from history', 'success');
+        }
+
+        function formatTimeAgo(timestamp) {
+            const seconds = Math.floor((Date.now() - timestamp) / 1000);
+            if (seconds < 60) return 'just now';
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes}m ago`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours}h ago`;
+            const days = Math.floor(hours / 24);
+            return `${days}d ago`;
+        }
+
+        function renderHistory() {
+            // Clean up any duplicates first
+            const duplicatesRemoved = cleanupDuplicateHistory();
+            if (duplicatesRemoved > 0) {
+                showToast(`Cleaned ${duplicatesRemoved} duplicate entries`, 'info', 2000);
+            }
+
+            const container = document.getElementById('history-list');
+            const history = getHistory();
+
+            if (history.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⏳</div>
+                        <p>No previous comparisons found</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = history.map(item => {
+                // Get service names from stored source types or infer from filenames
+                const source1 = item.file1Source || 
+                    (item.file1Name?.includes('Endpoints') ? 'SentinelOne' : 'S1');
+                const source2 = item.file2Source || 
+                    (item.file2Name?.includes('Devices') ? 'NinjaRMM' : 'Ninja');
+                
+                return `
+                    <div class="history-item">
+                        <div class="history-item-header">
+                            <div class="history-item-title">${escapeHtml(item.title)}</div>
+                            <div class="history-item-time">${formatTimeAgo(item.timestamp)}</div>
+                        </div>
+                        <div class="history-item-stats">
+                            <div class="history-stat">📦 ${item.data.stats.unique_file1} unique in ${source1}</div>
+                            <div class="history-stat">📦 ${item.data.stats.unique_file2} unique in ${source2}</div>
+                            <div class="history-stat">✅ ${item.data.stats.common_count} exact</div>
+                        </div>
+                        <div class="history-item-actions">
+                            <button class="history-action-btn history-load-btn" onclick="loadHistoryItem('${item.id}')">
+                                Load Results
+                            </button>
+                            <button class="history-action-btn history-delete-btn" onclick="deleteHistoryItem('${item.id}', event)">
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // File upload handling
+        function setupFileUpload(fileId) {
+            const dropZone = document.getElementById(`drop-zone-${fileId}`);
+            const fileInput = document.getElementById(`file-input-${fileId}`);
+            const fileCard = document.getElementById(`file${fileId}-card`);
+            const fileInfo = document.getElementById(`file-info-${fileId}`);
+            const fileName = document.getElementById(`file-name-${fileId}`);
+            const fileMeta = document.getElementById(`file-meta-${fileId}`);
+            const sheetSelect = document.getElementById(`sheet-select-${fileId}`);
+            const columnSelect = document.getElementById(`column-select-${fileId}`);
+
+            dropZone.addEventListener('click', (e) => {
+                // Don't trigger file input if clicking on SentinelOne button
+                if (e.target.closest('.s1-fetch-btn')) return;
+                fileInput.click();
+            });
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('dragover');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('dragover');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length) handleFileUpload(files[0], fileId);
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length) {
+                    handleFileUpload(e.target.files[0], fileId);
+                }
+            });
+
+            // Change file button
+            const changeFileBtn = document.getElementById(`change-file-${fileId}`);
+            changeFileBtn.addEventListener('click', () => {
+                resetFileCard(fileId);
+            });
+
+            // Unified fetch button
+            const unifiedFetchBtn = document.getElementById(`unified-fetch-btn-${fileId}`);
+            if (unifiedFetchBtn) {
+                unifiedFetchBtn.addEventListener('click', () => {
+                    openUnifiedClientModal(fileId);
+                });
+            }
+
+            // Advanced toggle button
+            const advancedToggleBtn = document.getElementById(`advanced-toggle-${fileId}`);
+            const advancedApiOptions = document.getElementById(`advanced-api-${fileId}`);
+            const advancedToggleText = document.getElementById(`advanced-toggle-text-${fileId}`);
+            if (advancedToggleBtn && advancedApiOptions) {
+                advancedToggleBtn.addEventListener('click', () => {
+                    const isHidden = advancedApiOptions.style.display === 'none';
+                    advancedApiOptions.style.display = isHidden ? 'flex' : 'none';
+                    advancedToggleText.textContent = isHidden ? '▲ Advanced' : '▼ Advanced';
+                });
+            }
+
+            // SentinelOne fetch button (in advanced section)
+            const s1FetchBtn = document.getElementById(`s1-fetch-btn-${fileId}`);
+            if (s1FetchBtn) {
+                s1FetchBtn.addEventListener('click', () => {
+                    openSiteSelectionModal(fileId);
+                });
+            }
+
+            // NinjaRMM fetch button (in advanced section)
+            const ninjaFetchBtn = document.getElementById(`ninja-fetch-btn-${fileId}`);
+            if (ninjaFetchBtn) {
+                ninjaFetchBtn.addEventListener('click', () => {
+                    openNinjaOrganizationModal(fileId);
+                });
+            }
+
+            sheetSelect.addEventListener('change', async (e) => {
+                const sheet = e.target.value;
+                if (!sheet) return;
+
+                try {
+                    const response = await fetch('/get_columns', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ file_id: fileId, sheet_name: sheet })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        columnSelect.innerHTML = '<option value="">Select a column</option>' +
+                            data.columns.map(col => `<option value="${col}">${col}</option>`).join('');
+                        columnSelect.disabled = false;
+                        fileMeta.textContent = `${data.row_count} rows • ${data.columns.length} columns`;
+
+                        // Auto-select if only 1 column
+                        if (data.columns.length === 1) {
+                            columnSelect.value = data.columns[0];
+                            state[`file${fileId}`].column = data.columns[0];
+                            updateCompareButton();
+                            updateQuickLoadButton();
+                            showToast('Single column auto-selected', 'success');
+                        }
+                    } else {
+                        showToast(data.error, 'error');
+                    }
+                } catch (err) {
+                    showToast('Error loading columns', 'error');
+                }
+            });
+
+            columnSelect.addEventListener('change', async (e) => {
+                const column = e.target.value;
+                const preview = document.getElementById(`column-preview-${fileId}`);
+
+                if (!column) {
+                    preview.classList.remove('visible');
+                    updateCompareButton();
+                    updateQuickLoadButton();
+                    return;
+                }
+
+                // Show preview
+                await loadColumnPreview(fileId);
+                updateCompareButton();
+                updateQuickLoadButton();
+            });
+        }
+
+        async function loadColumnPreview(fileId) {
+            const sheetSelect = document.getElementById(`sheet-select-${fileId}`);
+            const columnSelect = document.getElementById(`column-select-${fileId}`);
+            const preview = document.getElementById(`column-preview-${fileId}`);
+            const previewStats = document.getElementById(`preview-stats-${fileId}`);
+            const previewValues = document.getElementById(`preview-values-${fileId}`);
+
+            const sheet = sheetSelect.value;
+            const column = columnSelect.value;
+
+            if (!sheet || !column) return;
+
+            try {
+                const response = await fetch('/preview_column', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: fileId,
+                        sheet_name: sheet,
+                        column_name: column
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    previewStats.textContent = `${data.total_count} total values • ${data.unique_count} unique`;
+
+                    if (data.preview.length > 0) {
+                        previewValues.innerHTML = data.preview.map(v =>
+                            `<div class="preview-item">${escapeHtml(v)}</div>`
+                        ).join('');
+                    } else {
+                        previewValues.innerHTML = '<div class="preview-item" style="opacity: 0.5;">No data found</div>';
+                    }
+
+                    preview.classList.add('visible');
+                } else {
+                    showToast(data.error, 'error');
+                }
+            } catch (err) {
+                showToast('Error loading preview', 'error');
+            }
+        }
+
+        function resetFileCard(fileId) {
+            const dropZone = document.getElementById(`drop-zone-${fileId}`);
+            const fileCard = document.getElementById(`file${fileId}-card`);
+            const fileInfo = document.getElementById(`file-info-${fileId}`);
+            const fileInput = document.getElementById(`file-input-${fileId}`);
+            const sheetSelect = document.getElementById(`sheet-select-${fileId}`);
+            const columnSelect = document.getElementById(`column-select-${fileId}`);
+            const preview = document.getElementById(`column-preview-${fileId}`);
+            const resultsSection = document.getElementById('results-section');
+
+            // Reset state
+            state[`file${fileId}`].uploaded = false;
+            state[`file${fileId}`].filename = null;
+            state[`file${fileId}`].sheet = null;
+            state[`file${fileId}`].column = null;
+
+            // Reset UI
+            fileCard.classList.remove('uploaded');
+            fileInfo.classList.remove('visible');
+            preview.classList.remove('visible');
+            dropZone.style.display = 'block';
+            resultsSection.classList.remove('visible');
+
+            // Reset selects
+            sheetSelect.innerHTML = '<option value="">Upload a file first</option>';
+            sheetSelect.disabled = true;
+            columnSelect.innerHTML = '<option value="">Select a sheet first</option>';
+            columnSelect.disabled = true;
+
+            // Reset file input
+            fileInput.value = '';
+
+            // Update compare button
+            updateCompareButton();
+            updateQuickLoadButton();
+
+            showToast('File removed. Upload a new file.', 'success');
+        }
+
+        // Modal functions
+        function openSiteSelectionModal(fileId) {
+            console.log('=== OPENING SITE MODAL ===');
+            console.log('FileId:', fileId);
+
+            state.currentFileIdForS1 = fileId;
+            const modal = document.getElementById('site-modal');
+            const modalContent = document.getElementById('site-modal-content');
+
+            modal.classList.add('visible');
+            modalContent.innerHTML = `
+                <div class="modal-loading">
+                    <div class="spinner"></div>
+                    <p>Loading sites...</p>
+                </div>
+            `;
+
+            console.log('Loading sites...');
+            loadSites();
+        }
+
+        function closeSiteModal() {
+            console.log('=== CLOSING SITE MODAL ===');
+            const modal = document.getElementById('site-modal');
+            modal.classList.remove('visible');
+            state.currentFileIdForS1 = null;
+            console.log('Modal closed');
+        }
+
+        async function loadSites() {
+            const modalContent = document.getElementById('site-modal-content');
+
+            try {
+                const response = await fetch('/sentinelone/sites');
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error);
+                }
+
+                if (data.sites.length === 0) {
+                    modalContent.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🏢</div>
+                            <p>No sites found</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Sort sites alphabetically by name
+                data.sites.sort((a, b) => a.name.localeCompare(b.name));
+
+                const siteItems = data.sites.map(site => {
+                    const cache = getCache('S1', site.id || 'all');
+                    const lastPulled = cache ? `<span class="cache-badge">Last pulled: ${formatTimeAgo(cache.timestamp)}</span>` : '';
+
+                    return `
+                        <div class="site-item" data-site-id="${site.id}" data-site-name="${escapeHtml(site.name)}">
+                            <span class="site-icon">🏢</span>
+                            <span class="site-name">${escapeHtml(site.name)}</span>
+                            ${lastPulled}
+                        </div>
+                    `;
+                }).join('');
+
+                // All Sites option needs a cache check too
+                const allSitesCache = getCache('S1', 'all');
+                const allSitesLastPulled = allSitesCache ? `<span class="cache-badge">Last pulled: ${formatTimeAgo(allSitesCache.timestamp)}</span>` : '';
+
+                const allSitesOption = `
+                    <div class="site-item" data-site-id="" data-site-name="All Sites">
+                        <span class="site-icon">🌐</span>
+                        <span class="site-name">All Sites</span>
+                        ${allSitesLastPulled}
+                    </div>
+                `;
+
+                modalContent.innerHTML = `
+                    <input type="text" class="site-search" id="site-search" placeholder="🔍 Search sites...">
+                    <div class="site-list" id="site-list">
+                        ${allSitesOption}
+                        ${siteItems}
+                    </div>
+                `;
+
+                // Add search functionality
+                const searchInput = document.getElementById('site-search');
+                searchInput.addEventListener('input', (e) => {
+                    const searchTerm = e.target.value.toLowerCase();
+                    document.querySelectorAll('.site-item').forEach(item => {
+                        const siteName = item.dataset.siteName;
+                        if (siteName && siteName.toLowerCase().includes(searchTerm)) {
+                            item.classList.remove('hidden');
+                        } else if (siteName) {
+                            item.classList.add('hidden');
+                        }
+                    });
+                });
+
+                // Use event delegation on the site list instead of individual listeners
+                const siteList = document.getElementById('site-list');
+                siteList.addEventListener('click', function (e) {
+                    const siteItem = e.target.closest('.site-item');
+                    if (siteItem) {
+                        e.preventDefault();
+                        const siteId = siteItem.dataset.siteId || 'all';
+                        const siteName = siteItem.dataset.siteName;
+                        const fileId = state.currentFileIdForS1;
+                        selectSite(siteId, siteName, fileId);
+                    }
+                });
+
+            } catch (err) {
+                modalContent.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">❌</div>
+                        <p>${escapeHtml(err.message)}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function selectSite(siteId, siteName, fileId, skipCache = false) {
+            console.log(`DEBUG selectSite: siteId=${siteId}, siteName=${siteName}, fileId=${fileId}, skipCache=${skipCache}`);
+            siteId = siteId || 'all';
+            console.log(`DEBUG selectSite: After normalization, siteId=${siteId}`);
+            const cache = !skipCache ? getCache('S1', siteId) : null;
+
+            if (cache) {
+                console.log('Using cached data for site:', siteName, 'Slot:', fileId);
+                closeSiteModal();
+                await loadS1FromCache(fileId, cache.data, siteName, siteId);
+                return;
+            }
+
+            // Normal fetch if no cache or skipCache is true
+            console.log(`DEBUG selectSite: Calling executeS1Fetch with siteId=${siteId}`);
+            await executeS1Fetch(siteId, siteName, fileId);
+        }
+
+        // Add handlers for the cache choice buttons
+        document.getElementById('site-load-cached').addEventListener('click', async () => {
+            const choice = state.pendingCacheChoice;
+            if (!choice) return;
+
+            document.getElementById('site-cache-prompt').classList.remove('visible');
+            const fileId = state.currentFileIdForS1;
+            closeSiteModal();
+
+            // Re-simulate upload with cached data
+            await loadS1FromCache(fileId, choice.data, choice.name, choice.id);
+            state.pendingCacheChoice = null;
+        });
+
+        document.getElementById('site-fetch-fresh').addEventListener('click', async () => {
+            const choice = state.pendingCacheChoice;
+            if (!choice) return;
+
+            const fetchBtn = document.getElementById('site-fetch-fresh');
+            const loadBtn = document.getElementById('site-load-cached');
+            
+            // Disable buttons and show loading
+            fetchBtn.disabled = true;
+            loadBtn.disabled = true;
+            fetchBtn.innerHTML = '<span class="spinner"></span> Fetching...';
+
+            document.getElementById('site-cache-prompt').classList.remove('visible');
+            const fileId = state.currentFileIdForS1;
+            
+            try {
+                await executeS1Fetch(choice.id, choice.name, fileId);
+            } finally {
+                // Reset buttons (though modal should be closed by now)
+                fetchBtn.disabled = false;
+                loadBtn.disabled = false;
+                fetchBtn.innerHTML = 'Fetch Fresh';
+                state.pendingCacheChoice = null;
+            }
+        });
+
+        async function executeS1Fetch(siteId, siteName, fileId) {
+            if (!fileId) return;
+            console.log(`DEBUG executeS1Fetch: siteId=${siteId}, siteName=${siteName}, fileId=${fileId}`);
+            closeSiteModal();
+
+            // Set loading state on refresh button if it exists
+            const refreshBtn = document.getElementById(`refresh-source-${fileId}`);
+            if (refreshBtn) refreshBtn.classList.add('loading');
+
+            const finalSiteId = siteId === 'all' ? null : siteId;
+            console.log(`DEBUG executeS1Fetch: Calling fetchSentinelOneEndpoints with finalSiteId=${finalSiteId}`);
+            await fetchSentinelOneEndpoints(fileId, finalSiteId, siteName);
+
+            if (refreshBtn) refreshBtn.classList.remove('loading');
+        }
+
+        async function loadS1FromCache(fileId, data, siteName, siteId) {
+            // This is essentially parts of fetchSentinelOneEndpoints but without the fetch
+            const endpoints = data.endpoints;
+
+            // Add site_id to data so handleSentinelOneUploadSuccess can save it
+            data.site_id = siteId;
+
+            // Calculate offline devices
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - 30);
+            const offlineDevices = [];
+            for (const ep of endpoints) {
+                if (ep.lastActive && new Date(ep.lastActive) < cutoffDate) {
+                    offlineDevices.push({ name: ep.name, lastSeen: ep.lastActive });
+                }
+            }
+
+            // Upload the endpoints data to server session
+            const response = await fetch('/sentinelone/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file_id: fileId, endpoints: endpoints })
+            });
+
+            const uploadData = await response.json();
+            if (uploadData.success) {
+                state[`file${fileId}`].sourceType = 'SentinelOne';
+                state[`file${fileId}`].offlineDevices = offlineDevices;
+                handleSentinelOneUploadSuccess(fileId, uploadData, siteName, siteId);
+                showToast(`Loaded ${uploadData.row_count} endpoints from cache (${siteName})`, 'success');
+            }
+        }
+
+        async function fetchSentinelOneEndpoints(fileId, siteId = null, siteName = 'All Sites') {
+            const s1FetchBtn = document.getElementById(`s1-fetch-btn-${fileId}`);
+            const dropZone = document.getElementById(`drop-zone-${fileId}`);
+
+            s1FetchBtn.classList.add('loading');
+            s1FetchBtn.disabled = true;
+
+            try {
+                // Fetch endpoints from SentinelOne with site_id filtering
+                const url = siteId && siteId !== 'all'
+                    ? `/sentinelone/endpoints?site_id=${siteId}`
+                    : '/sentinelone/endpoints';
+
+                console.log(`DEBUG: Fetching S1 Endpoints. URL: ${url}, Slot: ${fileId}, Site: ${siteName}`);
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error);
+                }
+
+                if (data.endpoints.length === 0) {
+                    throw new Error('No endpoints found in SentinelOne');
+                }
+
+                // Cache the fresh data
+                setCache('S1', siteId || 'all', siteName, data);
+
+                // Calculate offline devices (> 30 days)
+                const cutoffDate = new Date();
+                cutoffDate.setDate(cutoffDate.getDate() - 30);
+                const offlineDevices = [];
+
+                for (const ep of data.endpoints) {
+                    if (ep.lastActive) {
+                        const lastActiveDate = new Date(ep.lastActive);
+                        if (lastActiveDate < cutoffDate) {
+                            offlineDevices.push({
+                                name: ep.name,
+                                lastSeen: ep.lastActive
+                            });
+                        }
+                    }
+                }
+
+                // Upload the endpoints data
+                const uploadResponse = await fetch('/sentinelone/upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: fileId,
+                        endpoints: data.endpoints
+                    })
+                });
+
+                const uploadData = await uploadResponse.json();
+
+                if (uploadData.success) {
+                    // Store source type and offline devices
+                    state[`file${fileId}`].sourceType = 'SentinelOne';
+                    state[`file${fileId}`].offlineDevices = offlineDevices;
+
+                    // Update UI as if file was uploaded
+                    handleSentinelOneUploadSuccess(fileId, uploadData, siteName, siteId);
+                    showToast(`Loaded ${uploadData.row_count} endpoints from ${siteName}`, 'success');
+                } else {
+                    throw new Error(uploadData.error);
+                }
+
+            } catch (err) {
+                showToast(err.message || 'Failed to fetch SentinelOne endpoints', 'error');
+            } finally {
+                s1FetchBtn.classList.remove('loading');
+                s1FetchBtn.disabled = false;
+            }
+        }
+
+        function handleSentinelOneUploadSuccess(fileId, data, siteName = 'SentinelOne', siteId = 'all') {
+            console.log(`DEBUG handleSentinelOneUploadSuccess: fileId=${fileId}, siteName=${siteName}, siteId=${siteId}`);
+            const dropZone = document.getElementById(`drop-zone-${fileId}`);
+            const fileCard = document.getElementById(`file${fileId}-card`);
+            const fileInfo = document.getElementById(`file-info-${fileId}`);
+            const fileNameEl = document.getElementById(`file-name-${fileId}`);
+            const fileMeta = document.getElementById(`file-meta-${fileId}`);
+            const sheetSelect = document.getElementById(`sheet-select-${fileId}`);
+            const columnSelect = document.getElementById(`column-select-${fileId}`);
+
+            state[`file${fileId}`].uploaded = true;
+            state[`file${fileId}`].filename = `${siteName} Endpoints`;
+
+            fileCard.classList.add('uploaded');
+            dropZone.style.display = 'none';
+            fileInfo.classList.add('visible');
+
+            fileNameEl.textContent = `🛡️ ${siteName} Endpoints`;
+            fileMeta.textContent = `${data.row_count} rows • ${data.columns.length} columns`;
+
+            // Save as last used source
+            console.log(`DEBUG handleSentinelOneUploadSuccess: Calling saveLastSourceConfig with siteId=${siteId}`);
+            saveLastSourceConfig(fileId, 'SentinelOne', siteId, siteName);
+
+            sheetSelect.innerHTML = data.sheets.map(sheet =>
+                `<option value="${sheet}">${sheet}</option>`
+            ).join('');
+            sheetSelect.disabled = false;
+
+            columnSelect.innerHTML = '<option value="">Select a column</option>' +
+                data.columns.map(col => `<option value="${col}">${col}</option>`).join('');
+            columnSelect.disabled = false;
+
+            // Auto-select the column (API data always has just one column)
+            if (data.columns.length === 1) {
+                columnSelect.value = data.columns[0];
+                state[`file${fileId}`].column = data.columns[0];
+                updateCompareButton();
+            }
+
+            updateCompareButton();
+            updateQuickLoadButton();
+
+            // Show and configure refresh button
+            const refreshBtn = document.getElementById(`refresh-source-${fileId}`);
+            if (refreshBtn) {
+                refreshBtn.style.display = 'flex';
+                refreshBtn.onclick = () => {
+                    executeS1Fetch(siteId, siteName, fileId);
+                };
+            }
+        }
+
+        // NinjaRMM Functions
+        function openNinjaOrganizationModal(fileId) {
+            console.log('=== OPENING NINJA MODAL ===');
+            console.log('FileId:', fileId);
+
+            state.currentFileIdForS1 = fileId; // Reuse the same state variable
+            const modal = document.getElementById('ninja-modal');
+            const modalContent = document.getElementById('ninja-modal-content');
+
+            modal.classList.add('visible');
+            modalContent.innerHTML = `
+                <div class="modal-loading">
+                    <div class="spinner"></div>
+                    <p>Loading organizations...</p>
+                </div>
+            `;
+
+            console.log('Loading organizations...');
+            loadNinjaOrganizations();
+        }
+
+        function closeNinjaModal() {
+            console.log('=== CLOSING NINJA MODAL ===');
+            const modal = document.getElementById('ninja-modal');
+            modal.classList.remove('visible');
+            state.currentFileIdForS1 = null;
+            console.log('Ninja modal closed');
+        }
+
+        async function loadNinjaOrganizations() {
+            const modalContent = document.getElementById('ninja-modal-content');
+
+            try {
+                const response = await fetch('/ninjarmm/organizations');
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error);
+                }
+
+                if (data.organizations.length === 0) {
+                    modalContent.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🏢</div>
+                            <p>No organizations found</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Add "All Organizations" option
+                const allOrgsCache = getCache('Ninja', 'all');
+                const allOrgsLastPulled = allOrgsCache ? `<span class="cache-badge">Last pulled: ${formatTimeAgo(allOrgsCache.timestamp)}</span>` : '';
+
+                const allOrgsOption = `
+                    <div class="site-item" data-org-id="" data-org-name="All Organizations">
+                        <span class="site-icon">🌐</span>
+                        <span class="site-name">All Organizations</span>
+                        ${allOrgsLastPulled}
+                    </div>
+                `;
+
+                const orgItems = data.organizations.map(org => {
+                    const cache = getCache('Ninja', org.id || 'all');
+                    const lastPulled = cache ? `<span class="cache-badge">Last pulled: ${formatTimeAgo(cache.timestamp)}</span>` : '';
+
+                    return `
+                        <div class="site-item" data-org-id="${org.id}" data-org-name="${escapeHtml(org.name)}">
+                            <span class="site-icon">🏢</span>
+                            <span class="site-name">${escapeHtml(org.name)}</span>
+                            ${lastPulled}
+                        </div>
+                    `;
+                }).join('');
+
+                modalContent.innerHTML = `
+                    <input type="text" class="site-search" id="ninja-search" placeholder="🔍 Search organizations...">
+                    <div class="site-list" id="ninja-org-list">
+                        ${allOrgsOption}
+                        ${orgItems}
+                    </div>
+                `;
+
+                // Add search functionality
+                const searchInput = document.getElementById('ninja-search');
+                searchInput.addEventListener('input', (e) => {
+                    const searchTerm = e.target.value.toLowerCase();
+                    document.querySelectorAll('#ninja-org-list .site-item').forEach(item => {
+                        const orgName = item.dataset.orgName;
+                        if (orgName && orgName.toLowerCase().includes(searchTerm)) {
+                            item.classList.remove('hidden');
+                        } else if (orgName) {
+                            item.classList.add('hidden');
+                        }
+                    });
+                });
+
+                // Use event delegation on the org list
+                const orgList = document.getElementById('ninja-org-list');
+                orgList.addEventListener('click', function (e) {
+                    const orgItem = e.target.closest('.site-item');
+
+                    if (orgItem) {
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        const orgId = orgItem.dataset.orgId || null;
+                        const orgName = orgItem.dataset.orgName;
+                        const fileId = state.currentFileIdForS1;
+
+                        console.log('Org selected:', orgId, orgName, 'Slot:', fileId);
+                        selectNinjaOrganization(orgId, orgName, fileId);
+                        return false;
+                    }
+                });
+
+            } catch (err) {
+                modalContent.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">❌</div>
+                        <p>${escapeHtml(err.message)}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function selectNinjaOrganization(orgId, orgName, fileId, skipCache = false) {
+            orgId = orgId || 'all';
+            const cache = !skipCache ? getCache('Ninja', orgId) : null;
+
+            if (cache) {
+                console.log('Using cached data for organization:', orgName, 'Slot:', fileId);
+                closeNinjaModal();
+                await loadNinjaFromCache(fileId, cache.data, orgName, orgId || 'all');
+                return;
+            }
+
+            // Normal fetch if no cache or skipCache is true
+            await executeNinjaFetch(orgId, orgName, fileId);
+        }
+
+        // Add handlers for the Ninja cache choice buttons
+        document.getElementById('ninja-load-cached').addEventListener('click', async () => {
+            const choice = state.pendingCacheChoice;
+            if (!choice || choice.source !== 'Ninja') return;
+
+            document.getElementById('ninja-cache-prompt').classList.remove('visible');
+            const fileId = state.currentFileIdForS1;
+            closeNinjaModal();
+
+            // Re-simulate upload with cached data
+            await loadNinjaFromCache(fileId, choice.data, choice.name, choice.id);
+            state.pendingCacheChoice = null;
+        });
+
+        document.getElementById('ninja-fetch-fresh').addEventListener('click', async () => {
+            const choice = state.pendingCacheChoice;
+            if (!choice || choice.source !== 'Ninja') return;
+
+            const fetchBtn = document.getElementById('ninja-fetch-fresh');
+            const loadBtn = document.getElementById('ninja-load-cached');
+            
+            // Disable buttons and show loading
+            fetchBtn.disabled = true;
+            loadBtn.disabled = true;
+            fetchBtn.innerHTML = '<span class="spinner"></span> Fetching...';
+
+            document.getElementById('ninja-cache-prompt').classList.remove('visible');
+            const fileId = state.currentFileIdForS1;
+            
+            try {
+                await executeNinjaFetch(choice.id, choice.name, fileId);
+            } finally {
+                // Reset buttons (though modal should be closed by now)
+                fetchBtn.disabled = false;
+                loadBtn.disabled = false;
+                fetchBtn.innerHTML = 'Fetch Fresh';
+                state.pendingCacheChoice = null;
+            }
+        });
+
+        // Unified Client Modal Functions
+        function openUnifiedClientModal(fileId) {
+            console.log('=== OPENING UNIFIED CLIENT MODAL ===');
+            console.log('FileId:', fileId);
+
+            state.currentFileIdForS1 = fileId;
+            const modal = document.getElementById('unified-client-modal');
+            const modalContent = document.getElementById('unified-client-modal-content');
+
+            modal.classList.add('visible');
+            modalContent.innerHTML = `
+                <div class="modal-loading">
+                    <div class="spinner"></div>
+                    <p>Loading clients from APIs...</p>
+                </div>
+            `;
+
+            loadUnifiedClients();
+        }
+
+        function closeUnifiedClientModal() {
+            const modal = document.getElementById('unified-client-modal');
+            modal.classList.remove('visible');
+            state.currentFileIdForS1 = null;
+        }
+
+        async function loadUnifiedClients() {
+            const modalContent = document.getElementById('unified-client-modal-content');
+
+            try {
+                const response = await fetch('/clients/unified');
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to load clients');
+                }
+
+                const clients = data.clients || [];
+                const stats = data.stats;
+
+                // Filter to only show matched clients (exist in both systems)
+                const matchedClients = clients.filter(client => client.matched === true);
+
+                if (matchedClients.length === 0) {
+                    modalContent.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📭</div>
+                            <p>No matched clients found. Clients must exist in both SentinelOne and NinjaRMM to run comparisons.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Render client list with match indicators
+                const clientListHTML = matchedClients.map(client => {
+                    const s1Available = client.s1_id !== null;
+                    const ninjaAvailable = client.ninja_id !== null;
+                    const matchedClass = client.matched ? 'client-matched' : 'client-unmatched';
+                    
+                    let statusIcons = '';
+                    if (s1Available && ninjaAvailable) {
+                        statusIcons = '<span class="client-status-icons">🛡️ 🥷</span>';
+                    } else if (s1Available) {
+                        statusIcons = '<span class="client-status-icons">🛡️</span>';
+                    } else if (ninjaAvailable) {
+                        statusIcons = '<span class="client-status-icons">🥷</span>';
+                    }
+
+                    return `
+                        <div class="site-item ${matchedClass}" 
+                             data-s1-id="${client.s1_id || ''}"
+                             data-s1-name="${escapeHtml(client.s1_name || '')}"
+                             data-ninja-id="${client.ninja_id || ''}"
+                             data-ninja-name="${escapeHtml(client.ninja_name || '')}"
+                             data-matched="${client.matched}">
+                            <div class="site-name">
+                                ${statusIcons}
+                                ${escapeHtml(client.name)}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                modalContent.innerHTML = `
+                    <div class="unified-stats">
+                        <span class="stat-item">✅ Matched Clients: ${stats.matched}</span>
+                        <span class="stat-item">📊 Showing only clients in both systems</span>
+                    </div>
+                    <div class="site-list">
+                        ${clientListHTML}
+                    </div>
+                `;
+
+                // Add click handlers
+                modalContent.querySelectorAll('.site-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        if (state.currentFileIdForS1 === 'main') {
+                            selectUnifiedClientAndCompare(item);
+                        } else {
+                            selectUnifiedClient(item);
+                        }
+                    });
+                });
+
+            } catch (err) {
+                modalContent.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">❌</div>
+                        <p>${escapeHtml(err.message)}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function selectUnifiedClient(clientElement) {
+            const fileId = state.currentFileIdForS1;
+            const s1Id = clientElement.dataset.s1Id || null;
+            const s1Name = clientElement.dataset.s1Name || null;
+            const ninjaId = clientElement.dataset.ninjaId || null;
+            const ninjaName = clientElement.dataset.ninjaName || null;
+            const matched = clientElement.dataset.matched === 'true';
+
+            closeUnifiedClientModal();
+
+            // Determine which source to fetch from (prefer matched, otherwise whatever is available)
+            if (matched || (s1Id && ninjaId)) {
+                // Both available - fetch both
+                showToast('Fetching from both SentinelOne and NinjaRMM...', 'info');
+                
+                // Fetch from both APIs concurrently and combine results
+                try {
+                    const s1Promise = fetchFromS1(s1Id, s1Name);
+                    const ninjaPromise = fetchFromNinja(ninjaId, ninjaName);
+                    
+                    const [s1Data, ninjaData] = await Promise.all([s1Promise, ninjaPromise]);
+                    
+                    // Combine the endpoints/devices
+                    const combined = [...(s1Data?.endpoints || []), ...(ninjaData?.devices || [])];
+                    
+                    // Upload combined data
+                    const response = await fetch('/sentinelone/upload', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            file_id: fileId,
+                            endpoints: combined
+                        })
+                    });
+                    
+                    const uploadData = await response.json();
+                    if (uploadData.success) {
+                        state[`file${fileId}`].sourceType = 'Combined';
+                        state[`file${fileId}`].offlineDevices = [
+                            ...(s1Data?.offlineDevices || []),
+                            ...(ninjaData?.offlineDevices || [])
+                        ];
+                        handleSentinelOneUploadSuccess(fileId, uploadData, s1Name || ninjaName, 'combined');
+                        saveLastSourceConfig(fileId, 'Combined', 'combined', s1Name || ninjaName);
+                    }
+                } catch (err) {
+                    showToast('Failed to fetch combined data: ' + err.message, 'error');
+                }
+            } else if (s1Id) {
+                // Only S1 available
+                await selectSite(s1Id, s1Name, fileId, true);
+            } else if (ninjaId) {
+                // Only Ninja available
+                await selectNinjaOrganization(ninjaId, ninjaName, fileId, true);
+            }
+        }
+
+        async function fetchFromS1(siteId, siteName) {
+            const url = siteId && siteId !== 'all'
+                ? `/sentinelone/endpoints?site_id=${siteId}`
+                : '/sentinelone/endpoints';
+
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (!data.success) throw new Error(data.error);
+
+            // Calculate offline devices
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - 30);
+            const offlineDevices = data.endpoints.filter(ep => {
+                if (ep.lastActive) {
+                    const lastActiveDate = new Date(ep.lastActive);
+                    return lastActiveDate < cutoffDate;
+                }
+                return false;
+            }).map(ep => ({ name: ep.name, lastSeen: ep.lastActive }));
+
+            return { endpoints: data.endpoints, offlineDevices };
+        }
+
+        async function fetchFromNinja(orgId, orgName) {
+            const url = orgId && orgId !== 'all'
+                ? `/ninjarmm/devices?org_id=${orgId}`
+                : '/ninjarmm/devices';
+
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (!data.success) throw new Error(data.error);
+
+            // Calculate offline devices
+            const cutoffTimestamp = (Date.now() / 1000) - (30 * 24 * 60 * 60);
+            const offlineDevices = data.devices.filter(dev => {
+                return dev.lastContact && dev.lastContact < cutoffTimestamp;
+            }).map(dev => ({
+                name: dev.name,
+                lastSeen: new Date(dev.lastContact * 1000).toISOString()
+            }));
+
+            return { devices: data.devices, offlineDevices };
+        }
+
+        async function executeNinjaFetch(orgId, orgName, fileId) {
+            if (!fileId) return;
+            closeNinjaModal();
+
+            // Set loading state on refresh button
+            const refreshBtn = document.getElementById(`refresh-source-${fileId}`);
+            if (refreshBtn) refreshBtn.classList.add('loading');
+
+            await fetchNinjaDevices(fileId, orgId === 'all' ? null : orgId, orgName);
+
+            if (refreshBtn) refreshBtn.classList.remove('loading');
+        }
+
+        async function loadNinjaFromCache(fileId, data, orgName, orgId) {
+            const devices = data.devices;
+
+            // Add org_id to data so handleNinjaUploadSuccess can save it
+            data.org_id = orgId;
+
+            // Calculate offline devices
+            const cutoffTimestamp = (Date.now() / 1000) - (30 * 24 * 60 * 60);
+            const offlineDevices = [];
+            for (const dev of devices) {
+                if (dev.lastContact && dev.lastContact < cutoffTimestamp) {
+                    offlineDevices.push({
+                        name: dev.name,
+                        lastSeen: new Date(dev.lastContact * 1000).toISOString()
+                    });
+                }
+            }
+
+            // Upload the devices data to server session
+            const response = await fetch('/ninjarmm/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file_id: fileId, devices: devices })
+            });
+
+            const uploadData = await response.json();
+            if (uploadData.success) {
+                state[`file${fileId}`].sourceType = 'NinjaRMM';
+                state[`file${fileId}`].offlineDevices = offlineDevices;
+                handleNinjaUploadSuccess(fileId, uploadData, orgName, orgId);
+                showToast(`Loaded ${uploadData.row_count} devices from cache (${orgName})`, 'success');
+            }
+        }
+
+        async function fetchNinjaDevices(fileId, orgId = null, orgName = 'All Organizations') {
+            const ninjaFetchBtn = document.getElementById(`ninja-fetch-btn-${fileId}`);
+
+            ninjaFetchBtn.classList.add('loading');
+            ninjaFetchBtn.disabled = true;
+
+            try {
+                // Fetch devices from NinjaRMM with org_id filtering
+                const url = orgId && orgId !== 'all'
+                    ? `/ninjarmm/devices?org_id=${orgId}`
+                    : '/ninjarmm/devices';
+
+                console.log(`DEBUG: Fetching Ninja Devices. URL: ${url}, Slot: ${fileId}, Org: ${orgName}`);
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error);
+                }
+
+                if (data.devices.length === 0) {
+                    throw new Error('No devices found in NinjaRMM');
+                }
+
+                // Cache the fresh data
+                setCache('Ninja', orgId || 'all', orgName, data);
+
+                // Calculate offline devices (> 30 days)
+                const cutoffTimestamp = (Date.now() / 1000) - (30 * 24 * 60 * 60);
+                const offlineDevices = [];
+
+                for (const dev of data.devices) {
+                    if (dev.lastContact) {
+                        if (dev.lastContact < cutoffTimestamp) {
+                            offlineDevices.push({
+                                name: dev.name,
+                                lastSeen: new Date(dev.lastContact * 1000).toISOString()
+                            });
+                        }
+                    }
+                }
+
+                // Upload the devices data
+                const uploadResponse = await fetch('/ninjarmm/upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: fileId,
+                        devices: data.devices
+                    })
+                });
+
+                const uploadData = await uploadResponse.json();
+
+                if (uploadData.success) {
+                    // Store source type and offline devices
+                    state[`file${fileId}`].sourceType = 'NinjaRMM';
+                    state[`file${fileId}`].offlineDevices = offlineDevices;
+
+                    // Update UI as if file was uploaded
+                    handleNinjaUploadSuccess(fileId, uploadData, orgName, orgId);
+                    showToast(`Loaded ${uploadData.row_count} devices from ${orgName}`, 'success');
+                } else {
+                    throw new Error(uploadData.error);
+                }
+
+            } catch (err) {
+                showToast(err.message || 'Failed to fetch NinjaRMM devices', 'error');
+            } finally {
+                ninjaFetchBtn.classList.remove('loading');
+                ninjaFetchBtn.disabled = false;
+            }
+        }
+
+        function handleNinjaUploadSuccess(fileId, data, orgName = 'NinjaRMM', orgId = 'all') {
+            const dropZone = document.getElementById(`drop-zone-${fileId}`);
+            const fileCard = document.getElementById(`file${fileId}-card`);
+            const fileInfo = document.getElementById(`file-info-${fileId}`);
+            const fileNameEl = document.getElementById(`file-name-${fileId}`);
+            const fileMeta = document.getElementById(`file-meta-${fileId}`);
+            const sheetSelect = document.getElementById(`sheet-select-${fileId}`);
+            const columnSelect = document.getElementById(`column-select-${fileId}`);
+
+            state[`file${fileId}`].uploaded = true;
+            state[`file${fileId}`].filename = `${orgName} Devices`;
+
+            fileCard.classList.add('uploaded');
+            dropZone.style.display = 'none';
+            fileInfo.classList.add('visible');
+
+            fileNameEl.textContent = `🥷 ${orgName} Devices`;
+            fileMeta.textContent = `${data.row_count} rows • ${data.columns.length} columns`;
+
+            // Save as last used source
+            saveLastSourceConfig(fileId, 'NinjaRMM', orgId, orgName);
+
+            sheetSelect.innerHTML = data.sheets.map(sheet =>
+                `<option value="${sheet}">${sheet}</option>`
+            ).join('');
+            sheetSelect.disabled = false;
+
+            columnSelect.innerHTML = '<option value="">Select a column</option>' +
+                data.columns.map(col => `<option value="${col}">${col}</option>`).join('');
+            columnSelect.disabled = false;
+
+            // Auto-select the column (API data always has just one column)
+            if (data.columns.length === 1) {
+                columnSelect.value = data.columns[0];
+                state[`file${fileId}`].column = data.columns[0];
+                updateCompareButton();
+            }
+
+            updateCompareButton();
+            updateQuickLoadButton();
+
+            // Show and configure refresh button
+            const refreshBtn = document.getElementById(`refresh-source-${fileId}`);
+            if (refreshBtn) {
+                refreshBtn.style.display = 'flex';
+                refreshBtn.onclick = () => {
+                    executeNinjaFetch(orgId, orgName, fileId);
+                };
+            }
+        }
+
+        async function handleFileUpload(file, fileId) {
+            const dropZone = document.getElementById(`drop-zone-${fileId}`);
+            const fileCard = document.getElementById(`file${fileId}-card`);
+            const fileInfo = document.getElementById(`file-info-${fileId}`);
+            const fileNameEl = document.getElementById(`file-name-${fileId}`);
+            const fileMeta = document.getElementById(`file-meta-${fileId}`);
+            const sheetSelect = document.getElementById(`sheet-select-${fileId}`);
+            const columnSelect = document.getElementById(`column-select-${fileId}`);
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('file_id', fileId);
+
+            dropZone.innerHTML = `
+                <div class="drop-zone-icon">⏳</div>
+                <p class="drop-zone-text">Uploading...</p>
+            `;
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    state[`file${fileId}`].uploaded = true;
+                    state[`file${fileId}`].filename = data.filename;
+
+                    fileCard.classList.add('uploaded');
+                    dropZone.style.display = 'none';
+                    fileInfo.classList.add('visible');
+
+                    fileNameEl.textContent = data.filename;
+                    fileMeta.textContent = `${data.row_count} rows • ${data.columns.length} columns`;
+
+                    sheetSelect.innerHTML = data.sheets.map(sheet =>
+                        `<option value="${sheet}">${sheet}</option>`
+                    ).join('');
+                    sheetSelect.disabled = false;
+
+                    columnSelect.innerHTML = '<option value="">Select a column</option>' +
+                        data.columns.map(col => `<option value="${col}">${col}</option>`).join('');
+                    columnSelect.disabled = false;
+
+                    showToast(`${data.filename} uploaded successfully`, 'success');
+                    updateCompareButton();
+                    updateQuickLoadButton();
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (err) {
+                dropZone.innerHTML = `
+                    <div class="drop-zone-icon">📁</div>
+                    <p class="drop-zone-text">Drop your Excel file here or click to browse</p>
+                    <p class="drop-zone-hint">Supports .xlsx and .xls files</p>
+                `;
+                showToast(err.message || 'Upload failed', 'error');
+            }
+        }
+
+        // Comparison
+        async function runComparison() {
+            try {
+                // Use state values instead of DOM elements that no longer exist
+                const response = await fetch('/compare', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file1_sheet: state.file1.sheet,
+                        file1_column: state.file1.column,
+                        file2_sheet: state.file2.sheet,
+                        file2_column: state.file2.column
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    displayResults(data);
+                    showToast('Comparison complete!', 'success');
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (err) {
+                showToast(err.message || 'Comparison failed', 'error');
+            } finally {
+                // Removed button loading state - no longer have manual compare button
+                updateCompareButton();
+                updateQuickLoadButton();
+            }
+        }
+
+        function displayResults(data, isHistoryLoad = false) {
+            const resultsSection = document.getElementById('results-section');
+            const uploadSection = document.querySelector('.upload-section');
+
+            // Show results
+            resultsSection.classList.add('visible');
+
+            // Hide upload section (but don't error if compareSection doesn't exist)
+            if (uploadSection) uploadSection.style.display = 'none';
+
+            // Hide quick load button when results are shown
+            updateQuickLoadButton();
+
+            // Scroll to top to show results
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // Save to history only if it's a new comparison
+            if (!isHistoryLoad) {
+                saveToHistory(data);
+            }
+
+            // Get file names
+            const file1Name = state.file1.filename || 'File 1';
+            const file2Name = state.file2.filename || 'File 2';
+
+            console.log('=== DISPLAY RESULTS ===');
+            console.log('file1Name:', file1Name);
+            console.log('file2Name:', file2Name);
+
+            // Use source type from state, or infer from filename
+            const displayName1 = state.file1.sourceType ||
+                (file1Name.includes('Endpoints') ? 'SentinelOne' :
+                    file1Name.includes('Devices') ? 'NinjaRMM' : file1Name);
+            const displayName2 = state.file2.sourceType ||
+                (file2Name.includes('Endpoints') ? 'SentinelOne' :
+                    file2Name.includes('Devices') ? 'NinjaRMM' : file2Name);
+
+            console.log('displayName1:', displayName1);
+            console.log('displayName2:', displayName2);
+
+            // Stats
+            const statsGrid = document.getElementById('stats-grid');
+            statsGrid.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-value blue">${data.stats.unique_file1}</div>
+                    <div class="stat-label">Unique in ${escapeHtml(displayName1)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value cyan">${data.stats.unique_file2}</div>
+                    <div class="stat-label">Unique in ${escapeHtml(displayName2)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value rose">${data.stats.only_in_file1_count}</div>
+                    <div class="stat-label">Only in ${escapeHtml(displayName1)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value amber">${data.stats.only_in_file2_count}</div>
+                    <div class="stat-label">Only in ${escapeHtml(displayName2)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value emerald">${data.stats.common_count}</div>
+                    <div class="stat-label">Exact Matches</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value violet">${data.stats.prefix_match_count}</div>
+                    <div class="stat-label">Prefix Matches</div>
+                </div>
+            `;
+
+            // Update tab labels
+            const tabBtns = document.querySelectorAll('.tab-btn');
+
+            tabBtns[0].innerHTML = `Only in ${escapeHtml(displayName1)} <span class="tab-count" id="tab-count-file1">${data.only_in_file1.length}</span>`;
+            tabBtns[1].innerHTML = `Only in ${escapeHtml(displayName2)} <span class="tab-count" id="tab-count-file2">${data.only_in_file2.length}</span>`;
+            tabBtns[2].innerHTML = `Exact Matches <span class="tab-count" id="tab-count-common">${data.in_both.length}</span>`;
+            tabBtns[3].innerHTML = `🔗 Prefix Matches <span class="tab-count" id="tab-count-prefix">${data.prefix_matches ? data.prefix_matches.length : 0}</span>`;
+
+            // Value lists - check against offline devices for visual indicator
+            const offline1Names = new Set((state.file1.offlineDevices || []).map(d => d.name));
+            const offline2Names = new Set((state.file2.offlineDevices || []).map(d => d.name));
+
+            document.getElementById('only-file1-list').innerHTML =
+                data.only_in_file1.length
+                    ? data.only_in_file1.map(v => {
+                        const isOffline = offline1Names.has(v);
+                        return `<span class="value-tag file1${isOffline ? ' offline' : ''}">${escapeHtml(v)}</span>`;
+                    }).join('')
+                    : `<div class="empty-state"><div class="empty-state-icon">✨</div><p>No unique values in ${escapeHtml(displayName1)}</p></div>`;
+
+            document.getElementById('only-file2-list').innerHTML =
+                data.only_in_file2.length
+                    ? data.only_in_file2.map(v => {
+                        const isOffline = offline2Names.has(v);
+                        return `<span class="value-tag file2${isOffline ? ' offline' : ''}">${escapeHtml(v)}</span>`;
+                    }).join('')
+
+                    : `<div class="empty-state"><div class="empty-state-icon">✨</div><p>No unique values in ${escapeHtml(displayName2)}</p></div>`;
+
+            document.getElementById('common-list').innerHTML =
+                data.in_both.length
+                    ? data.in_both.map(v => `<span class="value-tag common">${escapeHtml(v)}</span>`).join('')
+                    : '<div class="empty-state"><div class="empty-state-icon">🤔</div><p>No common values found</p></div>';
+
+            // Prefix Matches list
+            const prefixMatches = data.prefix_matches || [];
+            document.getElementById('prefix-list').innerHTML =
+                prefixMatches.length
+                    ? prefixMatches.map(m => `
+                        <div class="value-tag prefix">
+                            <div class="prefix-pair">
+                                <span>${escapeHtml(displayName1)}</span>
+                                <span class="prefix-arrow">→</span>
+                                <strong>${escapeHtml(m.file1)}</strong>
+                            </div>
+                            <div class="prefix-pair">
+                                <span>${escapeHtml(displayName2)}</span>
+                                <span class="prefix-arrow">→</span>
+                                <strong>${escapeHtml(m.file2)}</strong>
+                            </div>
+                        </div>
+                    `).join('')
+                    : '<div class="empty-state"><div class="empty-state-icon">🔍</div><p>No truncation matches found</p></div>';
+
+            // Scroll to results
+            resultsSection.scrollIntoView({ behavior: 'smooth' });
+
+            // Store for testing view search
+            state.currentComparisonData = data;
+            state.displayName1 = displayName1;
+            state.displayName2 = displayName2;
+
+            // Render testing view
+            renderTestingView();
+
+            // Render offline devices section
+            renderOfflineDevices();
+        }
+
+        function renderTestingView(searchTerm = '') {
+            const container = document.getElementById('testing-table-body');
+            const data = state.currentComparisonData;
+            if (!data) return;
+
+            // Update headers
+            document.getElementById('testing-header-file1').textContent = `${state.displayName1} Status`;
+            document.getElementById('testing-header-file2').textContent = `${state.displayName2} Status`;
+
+            // Prepare consolidated list
+            const devices = new Map(); // key -> { displayName, file1Status, file2Status, linked, sortName }
+            const handledInPrefix = new Set();
+
+            const offline1 = new Set((state.file1.offlineDevices || []).map(d => d.name));
+            const offline2 = new Set((state.file2.offlineDevices || []).map(d => d.name));
+            
+            // Create maps for quick lookup of lastSeen dates
+            const offline1Map = new Map((state.file1.offlineDevices || []).map(d => [d.name, d.lastSeen]));
+            const offline2Map = new Map((state.file2.offlineDevices || []).map(d => [d.name, d.lastSeen]));
+
+            // 1. Process Prefix Matches (Concatenation Fix)
+            (data.prefix_matches || []).forEach(m => {
+                const key = `prefix_${m.file1}_${m.file2}`;
+
+                // Track both original names as handled
+                handledInPrefix.add(m.file1);
+                handledInPrefix.add(m.file2);
+
+                const displayName = `
+                    <div class="testing-device-group">
+                        <div class="testing-device-sub"><span class="source-indicator s1">S1</span> ${escapeHtml(m.file1)}</div>
+                        <div class="testing-device-sub"><span class="source-indicator ninja">N</span> ${escapeHtml(m.file2)}</div>
+                    </div>
+                `;
+
+                devices.set(key, {
+                    displayName: displayName,
+                    file1: offline1.has(m.file1) ? 'offline' : 'found',
+                    file2: offline2.has(m.file2) ? 'offline' : 'found',
+                    file1LastSeen: offline1Map.get(m.file1),
+                    file2LastSeen: offline2Map.get(m.file2),
+                    linked: true,
+                    sortName: m.file1, // Use S1 name for sorting
+                    rawFile1: m.file1,
+                    rawFile2: m.file2
+                });
+            });
+
+            // Helper to set status for single devices
+            const setStatus = (name, fileId, status) => {
+                if (handledInPrefix.has(name)) return;
+
+                if (!devices.has(name)) {
+                    devices.set(name, {
+                        displayName: escapeHtml(name),
+                        file1: 'missing',
+                        file2: 'missing',
+                        file1LastSeen: null,
+                        file2LastSeen: null,
+                        linked: false,
+                        sortName: name,
+                        rawFile1: fileId === 1 ? name : '',
+                        rawFile2: fileId === 2 ? name : ''
+                    });
+                }
+                const entry = devices.get(name);
+                entry[`file${fileId}`] = status;
+                if (status === 'offline') {
+                    entry[`file${fileId}LastSeen`] = fileId === 1 ? offline1Map.get(name) : offline2Map.get(name);
+                }
+                if (fileId === 1) entry.rawFile1 = name;
+                if (fileId === 2) entry.rawFile2 = name;
+            };
+
+            // 2. Process all other categories
+            data.in_both.forEach(v => {
+                setStatus(v, 1, offline1.has(v) ? 'offline' : 'found');
+                setStatus(v, 2, offline2.has(v) ? 'offline' : 'found');
+            });
+
+            data.only_in_file1.forEach(v => {
+                setStatus(v, 1, offline1.has(v) ? 'offline' : 'found');
+            });
+
+            data.only_in_file2.forEach(v => {
+                setStatus(v, 2, offline2.has(v) ? 'offline' : 'found');
+            });
+
+            // Convert to array
+            let items = Array.from(devices.values());
+
+            // 3. APPLY SORTING
+            const { field, direction } = state.testingViewSort;
+            const dir = direction === 'asc' ? 1 : -1;
+
+            items.sort((a, b) => {
+                if (field === 'name') {
+                    return dir * a.sortName.localeCompare(b.sortName);
+                } else {
+                    // Sort by status: Found (2) > Offline (1) > Missing (0)
+                    const getRank = (status) => {
+                        if (status === 'found') return 2;
+                        if (status === 'offline') return 1;
+                        return 0;
+                    };
+                    const rankA = getRank(a[field]);
+                    const rankB = getRank(b[field]);
+                    if (rankA !== rankB) return dir * (rankA - rankB);
+                    return a.sortName.localeCompare(b.sortName); // Tie-break with name
+                }
+            });
+
+            // 4. Update Header UI
+            document.querySelectorAll('.testing-table th').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+                if (th.dataset.sort === field) {
+                    th.classList.add(`sort-${direction}`);
+                }
+            });
+
+            // 5. Filter
+            if (searchTerm) {
+                const term = searchTerm.toLowerCase();
+                items = items.filter(i => i.sortName.toLowerCase().includes(term));
+            }
+
+            // Helper to calculate days since last seen
+            const getDaysSinceLastSeen = (lastSeenDate) => {
+                if (!lastSeenDate) return null;
+                const date = new Date(lastSeenDate);
+                const now = new Date();
+                return Math.floor((now - date) / (1000 * 60 * 60 * 24));
+            };
+
+            const getStatusBadge = (status, lastSeenDate) => {
+                if (status === 'found') return '<span class="status-badge status-found">✅ Found</span>';
+                if (status === 'offline') {
+                    const days = getDaysSinceLastSeen(lastSeenDate);
+                    const daysText = days !== null ? ` (${days}d)` : '';
+                    return `<span class="status-badge status-offline" title="Last seen ${days} days ago">⚠️ Offline${daysText}</span>`;
+                }
+                return '<span class="status-badge status-missing">❌ Missing</span>';
+            };
+
+            container.innerHTML = items.map(item => `
+                <tr>
+                    <td>
+                        <div style="display: flex; align-items: center;">
+                            ${item.displayName}
+                            ${item.linked ? '<span class="device-link-icon" title="Matched via prefix">🔗</span>' : ''}
+                        </div>
+                    </td>
+                    <td>${getStatusBadge(item.file1, item.file1LastSeen)}</td>
+                    <td>${getStatusBadge(item.file2, item.file2LastSeen)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+                btn.classList.add('active');
+                document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+            });
+        });
+
+        // Check for last comparison on page load
+        function checkLastComparison() {
+            const lastCompStr = localStorage.getItem('lastComparisonData');
+            if (!lastCompStr) return;
+
+            try {
+                const lastComp = JSON.parse(lastCompStr);
+                const age = Date.now() - lastComp.timestamp;
+                const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+
+                // Only offer if less than 24 hours old
+                if (age < maxAge) {
+                    const displayName1 = lastComp.file1Name.includes('Endpoints') ? 'SentinelOne' :
+                        lastComp.file1Name.includes('Devices') ? 'NinjaRMM' : lastComp.file1Name;
+                    const displayName2 = lastComp.file2Name.includes('Endpoints') ? 'SentinelOne' :
+                        lastComp.file2Name.includes('Devices') ? 'NinjaRMM' : lastComp.file2Name;
+
+                    const minutes = Math.floor(age / 60000);
+                    const timeAgo = minutes < 60 ? `${minutes} minutes ago` :
+                        `${Math.floor(minutes / 60)} hours ago`;
+
+                    // Show persistent banner
+                    showRestoreBanner(displayName1, displayName2, timeAgo, () => {
+                        displayResults(lastComp.data);
+                        state.file1.filename = lastComp.file1Name;
+                        state.file2.filename = lastComp.file2Name;
+                    });
+                }
+            } catch (e) {
+                console.error('Failed to restore last comparison:', e);
+            }
+        }
+
+        function showRestoreBanner(name1, name2, timeAgo, onRestore) {
+            const banner = document.createElement('div');
+            banner.id = 'restore-banner';
+            banner.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+                color: white;
+                padding: 1rem 2rem;
+                border-radius: 12px;
+                box-shadow: 0 8px 32px rgba(59, 130, 246, 0.4);
+                z-index: 1000;
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                animation: slideDown 0.3s ease-out;
+                max-width: 90%;
+            `;
+
+            banner.innerHTML = `
+                <span style="font-size: 1.5rem;">💾</span>
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; margin-bottom: 0.25rem;">Last comparison available</div>
+                    <div style="font-size: 0.875rem; opacity: 0.9;">${name1} vs ${name2} (${timeAgo})</div>
+                </div>
+                <button id="restore-btn" style="padding: 0.5rem 1rem; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; color: white; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                    Restore
+                </button>
+                <button id="dismiss-btn" style="padding: 0.5rem 1rem; background: transparent; border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; color: white; cursor: pointer; transition: all 0.2s;">
+                    Dismiss
+                </button>
+            `;
+
+            document.body.appendChild(banner);
+
+            document.getElementById('restore-btn').addEventListener('click', () => {
+                onRestore();
+                banner.remove();
+            });
+
+            document.getElementById('dismiss-btn').addEventListener('click', () => {
+                banner.remove();
+                localStorage.removeItem('lastComparisonData');
+            });
+
+            // Add hover effects
+            document.getElementById('restore-btn').addEventListener('mouseenter', (e) => {
+                e.target.style.background = 'rgba(255,255,255,0.3)';
+            });
+            document.getElementById('restore-btn').addEventListener('mouseleave', (e) => {
+                e.target.style.background = 'rgba(255,255,255,0.2)';
+            });
+        }
+
+        // Initialize
+        checkLastComparison();
+        updateQuickLoadButton();
+
+        // Export button
+        document.getElementById('export-btn').addEventListener('click', exportToHTML);
+
+        // Export function
+        function exportToHTML() {
+            const file1Name = state.file1.filename || 'File 1';
+            const file2Name = state.file2.filename || 'File 2';
+
+            // Get simplified names
+            const displayName1 = state.file1.sourceType || (file1Name.includes('Endpoints') ? 'SentinelOne' :
+                file1Name.includes('Devices') ? 'NinjaRMM' : file1Name);
+            const displayName2 = state.file2.sourceType || (file2Name.includes('Endpoints') ? 'SentinelOne' :
+                file2Name.includes('Devices') ? 'NinjaRMM' : file2Name);
+
+            const statsHtml = document.getElementById('stats-grid').innerHTML;
+            const onlyFile1Html = document.getElementById('only-file1-list').innerHTML;
+            const onlyFile2Html = document.getElementById('only-file2-list').innerHTML;
+            const commonHtml = document.getElementById('common-list').innerHTML;
+            const prefixHtml = document.getElementById('prefix-list').innerHTML;
+            const offlineHtml = document.getElementById('offline-content').innerHTML;
+
+            const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comparison Results - ${displayName1} vs ${displayName2}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            padding: 2rem;
+            line-height: 1.6;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            padding-bottom: 0.2rem;
+        }
+        .subtitle {
+            text-align: center;
+            color: #94a3b8;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+        .stat-card {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(71, 85, 105, 0.3);
+            border-radius: 16px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        .stat-value.blue { color: #3b82f6; }
+        .stat-value.cyan { color: #06b6d4; }
+        .stat-value.rose { color: #f43f5e; }
+        .stat-value.amber { color: #f59e0b; }
+        .stat-value.emerald { color: #10b981; }
+        .stat-value.violet { color: #8b5cf6; }
+        .stat-label {
+            color: #94a3b8;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .section {
+            background: rgba(30, 41, 59, 0.3);
+            border: 1px solid rgba(71, 85, 105, 0.3);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        .section-title {
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            color: #e2e8f0;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+        .value-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+        .value-tag {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            border: 1px solid;
+            font-family: 'Consolas', 'Courier New', monospace;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .value-tag.file1 { border-color: #06b6d4; background: rgba(6, 182, 212, 0.1); color: #67e8f9; }
+        .value-tag.file2 { border-color: #f59e0b; background: rgba(245, 158, 11, 0.1); color: #fbbf24; }
+        .value-tag.common { border-color: #10b981; background: rgba(16, 185, 129, 0.1); color: #34d399; }
+        .value-tag.offline { 
+            border-color: #f43f5e !important; 
+            background: rgba(244, 63, 94, 0.15) !important;
+            box-shadow: 0 0 10px rgba(244, 63, 94, 0.2);
+        }
+        .value-tag.prefix {
+            border-color: #8b5cf6;
+            background: rgba(139, 92, 246, 0.1);
+            color: #c4b5fd;
+            flex-direction: column;
+            align-items: stretch;
+            min-width: 250px;
+        }
+        .prefix-pair { display: flex; justify-content: space-between; align-items: center; gap: 1rem; font-size: 0.8rem; }
+        .prefix-arrow { color: #8b5cf6; font-weight: bold; }
+        .offline-section { border-color: rgba(245, 158, 11, 0.3); }
+        .offline-source { margin-bottom: 1.5rem; }
+        .offline-source:last-child { margin-bottom: 0; }
+        .offline-source-header { 
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+            font-weight: 600; color: #f59e0b;
+        }
+        .offline-device-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
+        .offline-device-item {
+            background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(245, 158, 11, 0.1);
+            border-radius: 10px; padding: 0.75rem 1rem; display: flex; justify-content: space-between;
+        }
+        .offline-device-name { font-weight: 500; font-family: monospace; }
+        .offline-device-date { font-size: 0.8rem; color: #94a3b8; }
+        .empty-state { text-align: center; padding: 3rem; color: #64748b; }
+        .footer {
+            text-align: center; margin-top: 3rem; padding-top: 2rem;
+            border-top: 1px solid rgba(71, 85, 105, 0.3); color: #64748b; font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Comparison Results</h1>
+        <p class="subtitle">${escapeHtml(displayName1)} vs ${escapeHtml(displayName2)} - Generated on ${new Date().toLocaleString()}</p>
+        
+        <div class="stats-grid">
+            ${statsHtml}
+        </div>
+        
+        <div class="section">
+            <div class="section-title">🔵 Only in ${escapeHtml(displayName1)}</div>
+            <div class="value-list">
+                ${onlyFile1Html}
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">🟡 Only in ${escapeHtml(displayName2)}</div>
+            <div class="value-list">
+                ${onlyFile2Html}
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">🟢 Exact Matches</div>
+            <div class="value-list">
+                ${commonHtml}
+            </div>
+        </div>
+
+        <div class="section" style="${prefixHtml.includes('empty-state') ? '' : 'background: rgba(139, 92, 246, 0.05);'}">
+            <div class="section-title">🔗 Prefix Matches</div>
+            <div class="value-list">
+                ${prefixHtml}
+            </div>
+        </div>
+
+        <div class="section offline-section" style="${offlineHtml.trim() === '' ? 'display: none;' : ''}">
+            <div class="section-title">⚠️ Devices Offline > 30 Days</div>
+            <div class="offline-content">
+                ${offlineHtml}
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Excel Column Comparison Tool</p>
+            <p>Exported from Comparison Tool</p>
+        </div>
+    </div>
+</body>
+</html>`;
+
+            // Create blob and download
+            const blob = new Blob([html], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `comparison-${displayName1}-vs-${displayName2}-${Date.now()}.html`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showToast('Comparison exported to HTML!', 'success');
+        }
+
+        // Modal close handlers
+        document.getElementById('modal-close').addEventListener('click', closeSiteModal);
+        document.getElementById('ninja-modal-close').addEventListener('click', closeNinjaModal);
+        document.getElementById('unified-client-modal-close').addEventListener('click', closeUnifiedClientModal);
+        document.getElementById('history-modal-close').addEventListener('click', () => closeModal('history-modal'));
+
+        // Prevent clicks inside modals from closing them
+        document.getElementById('modal-content').addEventListener('click', e => e.stopPropagation());
+        document.getElementById('ninja-modal-content-wrapper').addEventListener('click', e => e.stopPropagation());
+        document.getElementById('unified-client-modal-content-wrapper').addEventListener('click', e => e.stopPropagation());
+        document.querySelector('#history-modal .modal').addEventListener('click', e => e.stopPropagation());
+
+        // Close modals when clicking on overlay background
+        ['site-modal', 'ninja-modal', 'unified-client-modal', 'history-modal'].forEach(id => {
+            document.getElementById(id).addEventListener('click', (e) => {
+                if (e.target.classList.contains('modal-overlay')) {
+                    if (id === 'site-modal') closeSiteModal();
+                    else if (id === 'ninja-modal') closeNinjaModal();
+                    else if (id === 'unified-client-modal') closeUnifiedClientModal();
+                    else closeModal(id);
+                }
+            });
+        });
+
+        // New comparison button
+        document.getElementById('new-comparison-btn').addEventListener('click', () => {
+            // Hide results
+            document.getElementById('results-section').classList.remove('visible');
+
+            // Show upload section
+            const uploadSection = document.querySelector('.upload-section');
+            if (uploadSection) uploadSection.style.display = 'flex';
+
+            // Reset to client selection view
+            document.getElementById('client-selector-prompt').style.display = 'block';
+            document.getElementById('selected-client-display').style.display = 'none';
+
+            // Reset state
+            state.file1 = { uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] };
+            state.file2 = { uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] };
+            state.clientName = null;
+            // Note: Don't reset lastHistorySave - keep debounce protection across multiple runs
+
+            // Update quick load button visibility
+            updateQuickLoadButton();
+
+            // Scroll to upload section
+            uploadSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+
+        // Quick load button
+        document.getElementById('quick-load-btn').addEventListener('click', async () => {
+            const saved = localStorage.getItem('lastSourceConfig');
+            if (!saved) return;
+            
+            try {
+                const config = JSON.parse(saved);
+                console.log('Quick load config:', config);
+                
+                // Check if we have both sources saved (unified client flow)
+                if (config.file1 && config.file2) {
+                    // Simulate clicking on a unified client with both IDs
+                    const s1Id = config.file1.id;
+                    const s1Name = config.file1.name;
+                    const ninjaId = config.file2.id;
+                    const ninjaName = config.file2.name;
+                    
+                    // Create a mock client element with the saved data
+                    const mockElement = {
+                        dataset: {
+                            s1Id: s1Id,
+                            s1Name: s1Name,
+                            ninjaId: ninjaId,
+                            ninjaName: ninjaName,
+                            matched: 'true'
+                        },
+                        querySelector: () => ({ 
+                            textContent: s1Name || ninjaName,
+                            trim: function() { return this.textContent; }  // Not needed but safe
+                        })
+                    };
+                    
+                    await selectUnifiedClientAndCompare(mockElement);
+                } else {
+                    showToast('No previous comparison found', 'info');
+                }
+            } catch (e) {
+                console.error('Quick load error:', e);
+                showToast('Failed to load previous comparison', 'error');
+            }
+        });
+
+        // History button
+        document.getElementById('history-btn').addEventListener('click', () => openModal('history-modal'));
+
+        // Sorting for Testing View
+        document.querySelectorAll('.testing-table th').forEach(th => {
+            th.addEventListener('click', () => {
+                const field = th.dataset.sort;
+                if (state.testingViewSort.field === field) {
+                    state.testingViewSort.direction = state.testingViewSort.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    state.testingViewSort.field = field;
+                    state.testingViewSort.direction = 'asc';
+                }
+                renderTestingView(document.getElementById('testing-search').value);
+            });
+        });
+
+        // Testing view search
+        document.getElementById('testing-search').addEventListener('input', (e) => {
+            renderTestingView(e.target.value);
+        });
+
+        // Main client selection button
+        document.getElementById('select-client-main-btn').addEventListener('click', () => {
+            openUnifiedClientModal('main');
+        });
+
+        // Change client button
+        document.getElementById('change-client-main-btn').addEventListener('click', () => {
+            document.getElementById('client-selector-prompt').style.display = 'block';
+            document.getElementById('selected-client-display').style.display = 'none';
+            document.getElementById('results-section').classList.remove('visible');
+        });
+
+        // Modified selectUnifiedClient to handle automatic comparison
+        async function selectUnifiedClientAndCompare(clientElement) {
+            const s1Id = clientElement.dataset.s1Id || null;
+            const s1Name = clientElement.dataset.s1Name || null;
+            const ninjaId = clientElement.dataset.ninjaId || null;
+            const ninjaName = clientElement.dataset.ninjaName || null;
+            const matched = clientElement.dataset.matched === 'true';
+            const clientName = clientElement.querySelector('.site-name').textContent.trim();
+
+            closeUnifiedClientModal();
+
+            // Show selected client
+            document.getElementById('client-selector-prompt').style.display = 'none';
+            document.getElementById('selected-client-display').style.display = 'block';
+            document.getElementById('selected-client-name').textContent = clientName;
+
+            // Store client name in state for history
+            state.clientName = clientName;
+
+            // Show fetching status
+            document.getElementById('status-fetching').style.display = 'flex';
+            document.getElementById('status-comparing').style.display = 'none';
+            document.getElementById('status-complete').style.display = 'none';
+            document.getElementById('sources-summary').style.display = 'none';
+
+            try {
+                let s1Data = null;
+                let ninjaData = null;
+
+                // Fetch from available sources
+                if (s1Id) {
+                    s1Data = await fetchFromS1(s1Id, s1Name);
+                    document.getElementById('s1-count').textContent = `${s1Data.endpoints.length} endpoints`;
+                }
+
+                if (ninjaId) {
+                    ninjaData = await fetchFromNinja(ninjaId, ninjaName);
+                    document.getElementById('ninja-count').textContent = `${ninjaData.devices.length} devices`;
+                }
+
+                // Show summary
+                document.getElementById('sources-summary').style.display = 'grid';
+
+                // Validate we have at least one data source
+                if (!s1Data && !ninjaData) {
+                    throw new Error('No data available from either source');
+                }
+
+                // Upload data to backend for both sources
+                if (s1Data) {
+                    const response = await fetch('/sentinelone/upload', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            file_id: '1',
+                            endpoints: s1Data.endpoints
+                        })
+                    });
+                    const uploadData = await response.json();
+                    if (uploadData.success) {
+                        state.file1.uploaded = true;
+                        state.file1.filename = `${s1Name || 'SentinelOne'} Endpoints`;
+                        state.file1.sourceType = 'SentinelOne';
+                        state.file1.offlineDevices = s1Data.offlineDevices;
+                        state.file1.sheet = uploadData.sheets[0];
+                        state.file1.column = uploadData.columns[0];
+                    }
+                }
+
+                if (ninjaData) {
+                    const response = await fetch('/ninjarmm/upload', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            file_id: '2',
+                            devices: ninjaData.devices
+                        })
+                    });
+                    const uploadData = await response.json();
+                    if (uploadData.success) {
+                        state.file2.uploaded = true;
+                        state.file2.filename = `${ninjaName || 'NinjaRMM'} Devices`;
+                        state.file2.sourceType = 'NinjaRMM';
+                        state.file2.offlineDevices = ninjaData.offlineDevices;
+                        state.file2.sheet = uploadData.sheets[0];
+                        state.file2.column = uploadData.columns[0];
+                    }
+                }
+
+                // Update status to comparing
+                document.getElementById('status-fetching').style.display = 'none';
+                document.getElementById('status-comparing').style.display = 'flex';
+
+                // Automatically run comparison
+                await new Promise(resolve => setTimeout(resolve, 500)); // Brief delay for UX
+                await runComparison();
+
+                // Update status to complete
+                document.getElementById('status-comparing').style.display = 'none';
+                document.getElementById('status-complete').style.display = 'flex';
+
+                // Save the last source config with client name for quick reload
+                if (s1Id && s1Name) {
+                    saveLastSourceConfig('1', 'SentinelOne', s1Id, clientName || s1Name);
+                }
+                if (ninjaId && ninjaName) {
+                    saveLastSourceConfig('2', 'NinjaRMM', ninjaId, clientName || ninjaName);
+                }
+
+            } catch (err) {
+                showToast('Failed to fetch and compare data: ' + err.message, 'error');
+                console.error('Error:', err);
+            }
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            fetch('/cleanup', { method: 'POST', keepalive: true });
+        });
+    </script>
+</body>
+
+</html>
