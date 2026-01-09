@@ -1,22 +1,25 @@
-# Excel Column Comparator
+# Endpoint Comparison Tool
 
-A modern web application to compare columns between two Excel files and visualize the differences. Now with SentinelOne API integration!
+A modern web application to compare endpoints between SentinelOne (EDR) and NinjaRMM (RMM) platforms. Identify discrepancies, offline devices, and automatically remediate missing SentinelOne installations.
 
 ## Features
 
-- **Drag & Drop Upload**: Easily upload Excel files (.xlsx, .xls)
-- **SentinelOne Integration**: Fetch live endpoint names directly from your SentinelOne console
-- **Sheet Selection**: Choose specific sheets from multi-sheet workbooks
-- **Column Selection**: Pick which column to compare from each file
-- **Column Preview**: See sample values before comparing to ensure correct selection
-- **Comprehensive Comparison**:
-  - Row-by-row comparison showing matches and differences
-  - Values unique to File 1
-  - Values unique to File 2
-  - Common values between both files
+- **Unified Client Selection**: Automatically match and select clients across both platforms
+- **SentinelOne Integration**: Fetch live endpoint data from your SentinelOne console
+- **NinjaRMM Integration**: Fetch live device data from your NinjaRMM account
+- **Automated Comparison**: Instant side-by-side comparison with intelligent matching
+- **Comprehensive Testing View**:
+  - Row-by-row device comparison showing matches and differences
+  - Offline device detection (> 30 days)
+  - Smart prefix matching for truncated hostnames
+- **🆕 Automated Remediation**:
+  - One-click SentinelOne installation on missing/offline devices
+  - Configurable remediation scripts via Settings
+  - Automatic online status checks before script execution
 - **Statistics Dashboard**: Quick overview of match rates and counts
-- **Smart Encoding Fix**: Automatically fixes character encoding issues (e.g., â€™ → ')
+- **Smart Encoding Fix**: Automatically fixes character encoding issues
 - **Beautiful UI**: Modern, dark-themed interface with smooth animations
+- **Comparison History**: Track and reload previous comparisons
 
 ## Installation
 
@@ -36,20 +39,27 @@ A modern web application to compare columns between two Excel files and visualiz
    pip install -r requirements.txt
    ```
 
-3. **Configure SentinelOne API** (optional):
+3. **Configure API Credentials**:
    ```bash
    # Copy the example .env file
    cp .env.example .env
    
-   # Edit .env and add your SentinelOne credentials:
-   # SENTINELONE_API_URL=https://your-tenant.sentinelone.net
-   # SENTINELONE_API_TOKEN=your_api_token_here
+   # Edit .env and add your credentials
    ```
 
-   To generate a SentinelOne API token:
-   - Log into your SentinelOne console
-   - Go to Settings → Users → [Your User] → Options
-   - Select "API Token Operations" → "Generate API Token"
+   **SentinelOne API:**
+   - `SENTINELONE_API_URL`: Your SentinelOne console URL
+   - `SENTINELONE_API_TOKEN`: Generate from Settings → Users → API Token Operations
+
+   **NinjaRMM API:**
+   - `NINJARMM_API_URL`: Usually `https://api.ninjarmm.com` (US) or `https://eu-api.ninjarmm.com` (EU)
+   - Choose ONE authentication method:
+     - **Option 1 (Recommended)**: OAuth Client App API
+       - `NINJARMM_CLIENT_ID` and `NINJARMM_CLIENT_SECRET`
+       - Generate from Administration → Apps → API → Add (select "Client App")
+     - **Option 2**: Legacy API (Basic Auth)
+       - `NINJARMM_API_KEY` and `NINJARMM_API_SECRET`
+       - Generate from Administration → Apps → API → Add (select "Legacy")
 
 ## Usage
 
@@ -63,16 +73,30 @@ A modern web application to compare columns between two Excel files and visualiz
    http://localhost:5000
    ```
 
-3. **Upload your data**:
-   - **Option A**: Drag and drop or click to browse for your Excel file
-   - **Option B**: Click "Fetch from SentinelOne" to load live endpoint data
-   
-4. **Select columns to compare**:
-   - Choose the sheet and column from each file
-   - View the column preview to ensure you selected the right data
+3. **Configure Remediation (Optional)**:
+   - Click the ⚙️ **Settings** button in the header
+   - Select a NinjaRMM script for SentinelOne installation/repair
+   - This enables the "Fix S1" button in the Testing View
 
-5. **Click "Compare Columns"** to see the results:
-   - View row-by-row comparison
+4. **Select a client**:
+   - Click "Choose Client" to see all matched clients across both platforms
+   - The app automatically fetches and compares data
+
+5. **Review results**:
+   - **Testing View**: See all devices with status indicators
+   - **Remediation**: Click "🛠️ Fix S1" to run the configured script on devices where:
+     - Device is online in NinjaRMM (< 30 days)
+     - SentinelOne is missing or offline
+   - Switch between tabs to see different views:
+     - Only in SentinelOne
+     - Only in NinjaRMM
+     - In Both Systems
+     - Prefix Matches (truncated hostnames)
+     - Offline Devices (> 30 days)
+
+6. **Export or run again**:
+   - Export results to HTML for reporting
+   - Click "Back to Client Selection" to compare another client
    - See values unique to each file
    - Find common values between files
 

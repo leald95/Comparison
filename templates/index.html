@@ -1136,6 +1136,29 @@
             transform: translateY(-2px);
         }
 
+        .settings-btn {
+            padding: 0.75rem 1.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            color: var(--text-secondary);
+            font-family: 'Outfit', sans-serif;
+            font-weight: 500;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .settings-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+            border-color: var(--accent-cyan);
+            transform: translateY(-2px);
+        }
+
         /* History Modal Specifics */
         .history-list {
             display: flex;
@@ -1856,6 +1879,133 @@
             color: #a78bfa;
             border: 1px solid rgba(139, 92, 246, 0.3);
         }
+
+        /* Remediation Button */
+        .remediation-btn {
+            padding: 0.4rem 0.9rem;
+            background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2);
+        }
+
+        .remediation-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+        }
+
+        .remediation-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: rgba(148, 163, 184, 0.3);
+        }
+
+        .remediation-btn.success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+        }
+
+        .remediation-btn.error {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.2);
+        }
+
+        .remediation-btn .spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        /* Settings Modal */
+        .settings-section {
+            margin-bottom: 2rem;
+        }
+
+        .settings-section-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .settings-section-desc {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+            line-height: 1.5;
+        }
+
+        .settings-select-wrapper {
+            position: relative;
+        }
+
+        .settings-select {
+            width: 100%;
+            background: var(--bg-deep);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            padding: 0.875rem 1rem;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            font-family: 'Outfit', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s;
+            appearance: none;
+        }
+
+        .settings-select:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.1);
+        }
+
+        .settings-select-wrapper::after {
+            content: '▼';
+            position: absolute;
+            right: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            pointer-events: none;
+            font-size: 0.7rem;
+        }
+
+        .settings-info {
+            margin-top: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: rgba(6, 182, 212, 0.1);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+            border-radius: 8px;
+            color: var(--accent-cyan);
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        .settings-warning {
+            margin-top: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-radius: 8px;
+            color: var(--accent-amber);
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
     </style>
 </head>
 
@@ -1876,6 +2026,9 @@
                 </button>
                 <button type="button" class="history-btn" id="history-btn">
                     ⏳ History
+                </button>
+                <button type="button" class="settings-btn" id="settings-btn">
+                    ⚙️ Settings
                 </button>
             </div>
         </header>
@@ -1963,6 +2116,7 @@
                                     <th data-sort="name" id="testing-header-name">Device Name</th>
                                     <th data-sort="file1" id="testing-header-file1">Source 1 Status</th>
                                     <th data-sort="file2" id="testing-header-file2">Source 2 Status</th>
+                                    <th>Remediation</th>
                                 </tr>
                             </thead>
                             <tbody id="testing-table-body">
@@ -2129,6 +2283,38 @@
         </div>
     </div>
 
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">⚙️ Settings</h2>
+                <button type="button" class="modal-close" id="settings-modal-close">✕</button>
+            </div>
+            <div class="modal-content" style="padding: 2rem;">
+                <div class="settings-section">
+                    <div class="settings-section-title">
+                        🛠️ SentinelOne Remediation Script
+                    </div>
+                    <div class="settings-section-desc">
+                        Select the NinjaRMM script to run when SentinelOne needs to be installed or repaired on a device.
+                    </div>
+                    <div class="settings-select-wrapper">
+                        <select id="remediation-script-select" class="settings-select">
+                            <option value="">Loading scripts...</option>
+                        </select>
+                    </div>
+                    <div class="settings-info" id="settings-script-info" style="display: none;">
+                        <strong>Selected Script:</strong><br>
+                        <span id="settings-script-details"></span>
+                    </div>
+                    <div class="settings-warning">
+                        ⚠️ <strong>Note:</strong> The remediation script will only run on devices that are online in NinjaRMM (last contact < 30 days).
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // State
         const state = {
@@ -2138,7 +2324,10 @@
             pendingCacheChoice: null,
             testingViewSort: { field: 'name', direction: 'asc' },
             clientName: null,
-            lastHistorySave: null  // Track last save timestamp to prevent duplicates
+            lastHistorySave: null,  // Track last save timestamp to prevent duplicates
+            remediationScriptId: null,  // Selected remediation script
+            availableScripts: [],  // Available NinjaRMM scripts
+            ninjaDevices: []  // Store NinjaRMM devices with IDs for remediation
         };
 
         // Last Source Config
@@ -3556,6 +3745,9 @@
 
             if (!data.success) throw new Error(data.error);
 
+            // Store full device data with IDs for remediation
+            state.ninjaDevices = data.devices;
+
             // Calculate offline devices
             const cutoffTimestamp = (Date.now() / 1000) - (30 * 24 * 60 * 60);
             const offlineDevices = data.devices.filter(dev => {
@@ -3610,6 +3802,12 @@
             if (uploadData.success) {
                 state[`file${fileId}`].sourceType = 'NinjaRMM';
                 state[`file${fileId}`].offlineDevices = offlineDevices;
+                
+                // Store full device data with IDs for remediation
+                if (fileId === 2) {
+                    state.ninjaDevices = devices;
+                }
+                
                 handleNinjaUploadSuccess(fileId, uploadData, orgName, orgId);
                 showToast(`Loaded ${uploadData.row_count} devices from cache (${orgName})`, 'success');
             }
@@ -3674,6 +3872,11 @@
                     // Store source type and offline devices
                     state[`file${fileId}`].sourceType = 'NinjaRMM';
                     state[`file${fileId}`].offlineDevices = offlineDevices;
+                    
+                    // Store full device data with IDs for remediation
+                    if (fileId === 2) {
+                        state.ninjaDevices = data.devices;
+                    }
 
                     // Update UI as if file was uploaded
                     handleNinjaUploadSuccess(fileId, uploadData, orgName, orgId);
@@ -4117,18 +4320,31 @@
                 return '<span class="status-badge status-missing">❌ Missing</span>';
             };
 
-            container.innerHTML = items.map(item => `
-                <tr>
-                    <td>
-                        <div style="display: flex; align-items: center;">
-                            ${item.displayName}
-                            ${item.linked ? '<span class="device-link-icon" title="Matched via prefix">🔗</span>' : ''}
-                        </div>
-                    </td>
-                    <td>${getStatusBadge(item.file1, item.file1LastSeen)}</td>
-                    <td>${getStatusBadge(item.file2, item.file2LastSeen)}</td>
-                </tr>
-            `).join('');
+            container.innerHTML = items.map(item => {
+                const needsRemediation = item.file2 === 'found' && (item.file1 === 'missing' || item.file1 === 'offline');
+                const isNinjaOnline = item.file2 === 'found';
+                const remediationCell = needsRemediation ? 
+                    `<button class="remediation-btn" 
+                            onclick="runRemediation('${escapeHtml(item.rawFile2 || item.sortName)}')" 
+                            ${!isNinjaOnline || !state.remediationScriptId ? 'disabled' : ''}
+                            title="${!state.remediationScriptId ? 'Configure script in Settings' : !isNinjaOnline ? 'Device offline in NinjaRMM' : 'Install SentinelOne'}">
+                        🛠️ Fix S1
+                    </button>` : '-';
+                
+                return `
+                    <tr data-device-name="${escapeHtml(item.rawFile2 || item.sortName)}">
+                        <td>
+                            <div style="display: flex; align-items: center;">
+                                ${item.displayName}
+                                ${item.linked ? '<span class="device-link-icon" title="Matched via prefix">🔗</span>' : ''}
+                            </div>
+                        </td>
+                        <td>${getStatusBadge(item.file1, item.file1LastSeen)}</td>
+                        <td>${getStatusBadge(item.file2, item.file2LastSeen)}</td>
+                        <td>${remediationCell}</td>
+                    </tr>
+                `;
+            }).join('');
         }
 
         function escapeHtml(str) {
@@ -4705,6 +4921,179 @@
         window.addEventListener('beforeunload', () => {
             fetch('/cleanup', { method: 'POST', keepalive: true });
         });
+
+        // ========== REMEDIATION AND SETTINGS ==========
+
+        // Settings Modal
+        document.getElementById('settings-btn').addEventListener('click', () => {
+            openModal('settings-modal');
+            loadNinjaScripts();
+        });
+
+        document.getElementById('settings-modal-close').addEventListener('click', () => closeModal('settings-modal'));
+        document.querySelector('#settings-modal .modal').addEventListener('click', e => e.stopPropagation());
+        document.getElementById('settings-modal').addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal-overlay')) {
+                closeModal('settings-modal');
+            }
+        });
+
+        // Load saved remediation script from localStorage
+        function loadSavedSettings() {
+            const saved = localStorage.getItem('remediationScriptId');
+            if (saved) {
+                state.remediationScriptId = parseInt(saved);
+            }
+        }
+
+        // Load available NinjaRMM scripts
+        async function loadNinjaScripts() {
+            const select = document.getElementById('remediation-script-select');
+            select.innerHTML = '<option value="">Loading scripts...</option>';
+            
+            try {
+                const response = await fetch('/ninjarmm/scripts');
+                const data = await response.json();
+                
+                if (data.success) {
+                    state.availableScripts = data.scripts;
+                    
+                    select.innerHTML = '<option value="">-- Select a script --</option>';
+                    data.scripts.forEach(script => {
+                        const option = document.createElement('option');
+                        option.value = script.id;
+                        option.textContent = `${script.name} (${script.language})`;
+                        option.dataset.description = script.description || '';
+                        option.dataset.category = script.category || '';
+                        select.appendChild(option);
+                    });
+                    
+                    // Restore saved selection
+                    if (state.remediationScriptId) {
+                        select.value = state.remediationScriptId;
+                        updateScriptInfo(state.remediationScriptId);
+                    }
+                } else {
+                    select.innerHTML = '<option value="">Error loading scripts</option>';
+                    showToast('Failed to load scripts: ' + data.error, 'error');
+                }
+            } catch (err) {
+                select.innerHTML = '<option value="">Error loading scripts</option>';
+                showToast('Failed to load scripts: ' + err.message, 'error');
+            }
+        }
+
+        // Handle script selection
+        document.getElementById('remediation-script-select').addEventListener('change', (e) => {
+            const scriptId = parseInt(e.target.value);
+            if (scriptId) {
+                state.remediationScriptId = scriptId;
+                localStorage.setItem('remediationScriptId', scriptId);
+                updateScriptInfo(scriptId);
+                showToast('Remediation script configured', 'success');
+                
+                // Re-render testing view to update button states
+                if (state.currentComparisonData) {
+                    renderTestingView(document.getElementById('testing-search').value);
+                }
+            } else {
+                state.remediationScriptId = null;
+                localStorage.removeItem('remediationScriptId');
+                document.getElementById('settings-script-info').style.display = 'none';
+            }
+        });
+
+        function updateScriptInfo(scriptId) {
+            const script = state.availableScripts.find(s => s.id === scriptId);
+            if (script) {
+                const infoDiv = document.getElementById('settings-script-info');
+                const detailsSpan = document.getElementById('settings-script-details');
+                detailsSpan.innerHTML = `
+                    <strong>${script.name}</strong><br>
+                    Language: ${script.language}<br>
+                    Category: ${script.category}<br>
+                    ${script.description ? `Description: ${script.description}` : ''}
+                `;
+                infoDiv.style.display = 'block';
+            }
+        }
+
+        // Run remediation on a device
+        async function runRemediation(deviceName) {
+            if (!state.remediationScriptId) {
+                showToast('Please configure a remediation script in Settings', 'error');
+                return;
+            }
+
+            // Find the device in NinjaRMM devices
+            const device = state.ninjaDevices.find(d => d.name === deviceName);
+            if (!device || !device.id) {
+                showToast('Device not found in NinjaRMM data', 'error');
+                return;
+            }
+
+            // Check if device is online (last contact < 30 days)
+            const now = Date.now();
+            const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
+            const lastContact = device.lastContact ? device.lastContact * 1000 : 0; // Convert to milliseconds
+            
+            if (lastContact < thirtyDaysAgo) {
+                showToast('Device is offline in NinjaRMM (> 30 days)', 'error');
+                return;
+            }
+
+            // Find the button and update its state
+            const row = document.querySelector(`tr[data-device-name="${deviceName}"]`);
+            const button = row ? row.querySelector('.remediation-btn') : null;
+            
+            if (button) {
+                button.disabled = true;
+                button.innerHTML = '<span class="spinner"></span> Running...';
+            }
+
+            try {
+                const response = await fetch('/ninjarmm/run-script', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        device_id: device.id,
+                        script_id: state.remediationScriptId,
+                        parameters: {}
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast(`✅ Script triggered on ${deviceName}`, 'success');
+                    if (button) {
+                        button.classList.add('success');
+                        button.innerHTML = '✅ Triggered';
+                        setTimeout(() => {
+                            button.classList.remove('success');
+                            button.innerHTML = '🛠️ Fix S1';
+                            button.disabled = false;
+                        }, 5000);
+                    }
+                } else {
+                    throw new Error(data.error || 'Unknown error');
+                }
+            } catch (err) {
+                showToast('Failed to run script: ' + err.message, 'error');
+                if (button) {
+                    button.classList.add('error');
+                    button.innerHTML = '❌ Failed';
+                    setTimeout(() => {
+                        button.classList.remove('error');
+                        button.innerHTML = '🛠️ Fix S1';
+                        button.disabled = false;
+                    }, 3000);
+                }
+            }
+        }
+
+        // Load settings on page load
+        loadSavedSettings();
     </script>
 </body>
 
