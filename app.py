@@ -1397,9 +1397,11 @@ def trigger_ad_inventory():
     callback_url = (os.getenv('AD_CALLBACK_URL') or '').strip() or (request.host_url.rstrip('/') + '/ad/intake')
 
     # Parameters are passed through to Ninja; your script should accept these.
+    # Clean client name: remove extra whitespace, newlines, normalize to single line
+    clean_client = ' '.join(client.split())
     script_params = {
         'Days': days,
-        'ClientName': client,
+        'ClientName': clean_client,
         'CallbackUrl': callback_url,
         'Nonce': nonce,
         'SigningKey': signing_key,
@@ -1460,7 +1462,14 @@ def trigger_ad_inventory():
                         payload['runAs'] = run_as
 
                     logger.info('Trying Ninja script-run: endpoint=%s variant=%s payload=%s', last_endpoint, last_variant, payload)
-                    last_resp = requests.post(endpoint, json=payload, headers=headers, auth=auth, timeout=30)
+                    try:
+                        last_resp = requests.post(endpoint, json=payload, headers=headers, auth=auth, timeout=30)
+                        logger.info('Ninja script-run response: variant=%s status=%s body=%s', last_variant, last_resp.status_code, last_resp.text[:300])
+                    except requests.exceptions.RequestException as e:
+                        logger.warning('Ninja script-run request failed: variant=%s endpoint=%s error=%s', last_variant, last_endpoint, str(e))
+                        last_resp = None
+                        continue
+
                     attempts.append({
                         'variant': last_variant,
                         'endpoint': last_endpoint,
@@ -1481,7 +1490,9 @@ def trigger_ad_inventory():
                             'attempts': attempts[-10:]
                         }), last_resp.status_code
 
-        logger.error('Ninja script-run exhausted all attempts: last_variant=%s last_status=%s', last_variant, last_resp.status_code if last_resp else 'none')
+        logger.error('Ninja script-run exhausted all attempts: last_variant=%s last_status=%s attempts=%s', last_variant, last_resp.status_code if last_resp else 'none', len(attempts))
+        if not last_resp:
+            return jsonify({'error': 'All Ninja script-run endpoints failed (connection error)', 'attempts': attempts[-10:]}), 500
         return jsonify({
             'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}',
             'attempts': attempts[-10:]
