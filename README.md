@@ -70,9 +70,10 @@ A modern web application to compare endpoints between SentinelOne (EDR) and Ninj
    ```
 
 2. **Open your browser** and navigate to:
-   ```
-   http://localhost:5000
-   ```
+   - Same machine: `http://localhost:5000`
+   - Other machines on the network: `http://<SERVER_LAN_IP>:5000`
+
+   (Make sure the server firewall allows inbound TCP/5000.)
 
 3. **Configure Remediation (Optional)**:
    - Click the ⚙️ **Settings** button in the header

@@ -1182,8 +1182,10 @@ def cleanup():
 
 
 if __name__ == '__main__':
-    logger.info("Endpoint Comparison Tool starting (http://localhost:5000)")
     debug = os.getenv('FLASK_DEBUG', '0') in ('1', 'true', 'True')
-    app.run(debug=debug, port=int(os.getenv('PORT', '5000')))
+    host = os.getenv('FLASK_HOST', '0.0.0.0')
+    port = int(os.getenv('PORT', '5000'))
+    logger.info(f"Endpoint Comparison Tool starting (http://{host}:{port})")
+    app.run(host=host, debug=debug, port=port)
 
 
