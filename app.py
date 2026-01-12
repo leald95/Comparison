@@ -1654,6 +1654,60 @@ def ad_debug():
             result['script_error'] = 'script_id must be an integer'
 
     result['ready'] = result['device_valid'] and result['script_valid']
+    
+    # Optional: actually test the script run API call (dry run)
+    test_run = request.args.get('test_run', '').lower() == 'true'
+    logger.info('ad_debug: test_run=%s ready=%s', test_run, result['ready'])
+    if test_run and result['ready']:
+        try:
+            # Re-get auth for the test call
+            test_headers, test_auth = _get_ninja_auth(api_url)
+            test_headers = {**test_headers, 'Content-Type': 'application/json'}
+            
+            device_id_int = int(device_id)
+            script_id_int = int(script_id)
+            
+            # Try the simplest possible payload
+            test_payload = {
+                'id': script_id_int,
+                'type': 'SCRIPT'
+            }
+            
+            logger.info('ad_debug: attempting test run with payload=%s', test_payload)
+            
+            test_results = []
+            endpoints = [
+                f'{api_url}/v2/device/{device_id_int}/script/run',
+                f'{api_url}/api/v2/device/{device_id_int}/script/run',
+            ]
+            
+            for endpoint in endpoints:
+                try:
+                    logger.info('ad_debug: calling endpoint=%s', endpoint)
+                    r = requests.post(endpoint, json=test_payload, headers=test_headers, auth=test_auth, timeout=15)
+                    logger.info('ad_debug: response status=%s', r.status_code)
+                    test_results.append({
+                        'endpoint': endpoint,
+                        'status': r.status_code,
+                        'body': r.text[:500],
+                        'request_payload': test_payload,
+                        'response_headers': dict(r.headers),
+                    })
+                    # If success, break
+                    if r.status_code in (200, 204):
+                        break
+                except Exception as e:
+                    logger.warning('ad_debug: endpoint error: %s', str(e))
+                    test_results.append({
+                        'endpoint': endpoint,
+                        'error': str(e)
+                    })
+            
+            result['test_run_results'] = test_results
+        except Exception as e:
+            logger.error('ad_debug: test_run error: %s', str(e))
+            result['test_run_error'] = str(e)
+    
     return jsonify(result)
 
 

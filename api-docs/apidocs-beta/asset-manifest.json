@@ -1,0 +1,23 @@
+{
+  "files": {
+    "main.css": "/apidocs-beta/static/css/main.be2d9d26.chunk.css",
+    "main.js": "/apidocs-beta/static/js/main.082bc04e.chunk.js",
+    "main.js.map": "/apidocs-beta/static/js/main.082bc04e.chunk.js.map",
+    "runtime-main.js": "/apidocs-beta/static/js/runtime-main.0cd0bb94.js",
+    "runtime-main.js.map": "/apidocs-beta/static/js/runtime-main.0cd0bb94.js.map",
+    "static/css/2.1835b4a7.chunk.css": "/apidocs-beta/static/css/2.1835b4a7.chunk.css",
+    "static/js/2.ebc0ed61.chunk.js": "/apidocs-beta/static/js/2.ebc0ed61.chunk.js",
+    "static/js/2.ebc0ed61.chunk.js.map": "/apidocs-beta/static/js/2.ebc0ed61.chunk.js.map",
+    "index.html": "/apidocs-beta/index.html",
+    "static/css/2.1835b4a7.chunk.css.map": "/apidocs-beta/static/css/2.1835b4a7.chunk.css.map",
+    "static/css/main.be2d9d26.chunk.css.map": "/apidocs-beta/static/css/main.be2d9d26.chunk.css.map",
+    "static/js/2.ebc0ed61.chunk.js.LICENSE.txt": "/apidocs-beta/static/js/2.ebc0ed61.chunk.js.LICENSE.txt"
+  },
+  "entrypoints": [
+    "static/js/runtime-main.0cd0bb94.js",
+    "static/css/2.1835b4a7.chunk.css",
+    "static/js/2.ebc0ed61.chunk.js",
+    "static/css/main.be2d9d26.chunk.css",
+    "static/js/main.082bc04e.chunk.js"
+  ]
+}
