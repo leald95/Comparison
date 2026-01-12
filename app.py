@@ -1434,17 +1434,6 @@ def trigger_ad_inventory():
             f'{api_url}/v2/device/{device_id}/script/run',
         ]
 
-        # Try multiple ID field combinations (some tenants require uid, some accept id)
-        id_variants = []
-        if script_uid:
-            # If we have uid, try it first with and without id
-            id_variants.extend([
-                ('uid', {'uid': script_uid}),
-                ('id+uid', {'id': script_id, 'uid': script_uid}),
-            ])
-        # Always try plain id (fallback)
-        id_variants.append(('id', {'id': script_id}))
-
         last_resp = None
         last_variant = None
         last_endpoint = None
@@ -1452,48 +1441,48 @@ def trigger_ad_inventory():
 
         for endpoint in endpoints:
             for param_name, parameters_str in param_variants:
-                for id_name, id_fields in id_variants:
-                    last_endpoint = endpoint
-                    last_variant = f'{param_name}/{id_name}'
+                last_endpoint = endpoint
+                last_variant = param_name
 
-                    payload = {
-                        'type': 'SCRIPT',
-                        **id_fields
-                    }
-                    # Only include parameters if non-empty
-                    if parameters_str:
-                        payload['parameters'] = parameters_str
-                    if run_as:
-                        payload['runAs'] = run_as
+                # Match n8n-nodes-ninja-one payload format exactly: id first, then type, then parameters
+                payload = {
+                    'id': script_id,
+                    'type': 'SCRIPT',
+                }
+                # Only include parameters if non-empty
+                if parameters_str:
+                    payload['parameters'] = parameters_str
+                if run_as:
+                    payload['runAs'] = run_as
 
-                    logger.info('Trying Ninja script-run: endpoint=%s variant=%s payload=%s', last_endpoint, last_variant, payload)
-                    try:
-                        last_resp = requests.post(endpoint, json=payload, headers=headers, auth=auth, timeout=30)
-                        logger.info('Ninja script-run response: variant=%s status=%s body=%s', last_variant, last_resp.status_code, last_resp.text[:300])
-                    except requests.exceptions.RequestException as e:
-                        logger.warning('Ninja script-run request failed: variant=%s endpoint=%s error=%s', last_variant, last_endpoint, str(e))
-                        last_resp = None
-                        continue
+                logger.info('Trying Ninja script-run: endpoint=%s variant=%s payload=%s', last_endpoint, last_variant, payload)
+                try:
+                    last_resp = requests.post(endpoint, json=payload, headers=headers, auth=auth, timeout=30)
+                    logger.info('Ninja script-run response: variant=%s status=%s body=%s', last_variant, last_resp.status_code, last_resp.text[:300])
+                except requests.exceptions.RequestException as e:
+                    logger.warning('Ninja script-run request failed: variant=%s endpoint=%s error=%s', last_variant, last_endpoint, str(e))
+                    last_resp = None
+                    continue
 
-                    attempts.append({
-                        'variant': last_variant,
-                        'endpoint': last_endpoint,
-                        'status': last_resp.status_code,
-                        'body': (last_resp.text or '')[:200]
-                    })
+                attempts.append({
+                    'variant': last_variant,
+                    'endpoint': last_endpoint,
+                    'status': last_resp.status_code,
+                    'body': (last_resp.text or '')[:200]
+                })
 
-                    if last_resp.status_code in (200, 204):
-                        logger.info('Ninja script-run succeeded: variant=%s status=%s', last_variant, last_resp.status_code)
-                        return jsonify({'success': True, 'message': 'AD inventory triggered'})
+                if last_resp.status_code in (200, 204):
+                    logger.info('Ninja script-run succeeded: variant=%s status=%s', last_variant, last_resp.status_code)
+                    return jsonify({'success': True, 'message': 'AD inventory triggered'})
 
-                    # Retry only on server-side errors and "not found" (endpoint/resource may differ per tenant).
-                    retryable = {500, 404}
-                    if last_resp.status_code not in retryable:
-                        logger.warning('Ninja script-run non-retryable error: variant=%s status=%s body=%s', last_variant, last_resp.status_code, last_resp.text[:200])
-                        return jsonify({
-                            'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}',
-                            'attempts': attempts[-10:]
-                        }), last_resp.status_code
+                # Retry only on server-side errors and "not found" (endpoint/resource may differ per tenant).
+                retryable = {500, 404}
+                if last_resp.status_code not in retryable:
+                    logger.warning('Ninja script-run non-retryable error: variant=%s status=%s body=%s', last_variant, last_resp.status_code, last_resp.text[:200])
+                    return jsonify({
+                        'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}',
+                        'attempts': attempts[-10:]
+                    }), last_resp.status_code
 
         logger.error('Ninja script-run exhausted all attempts: last_variant=%s last_status=%s attempts=%s', last_variant, last_resp.status_code if last_resp else 'none', len(attempts))
         if not last_resp:
