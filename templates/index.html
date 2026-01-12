@@ -2538,8 +2538,8 @@
 
         // State
         const state = {
-            file1: { fileId: '1', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] },
-            file2: { fileId: '2', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] },
+            file1: { fileId: '1', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, sourceConfig: null, offlineDevices: [] },
+            file2: { fileId: '2', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, sourceConfig: null, offlineDevices: [] },
             primarySources: null, // snapshot of the main S1 vs Ninja sources
             ad: { attached: false, days: 30, scriptId: null, deviceId: null, count: 0, receivedAt: null },
             adSource: null,
@@ -3581,6 +3581,7 @@
 
             state[`file${fileId}`].uploaded = true;
             state[`file${fileId}`].filename = `${siteName} Endpoints`;
+            state[`file${fileId}`].sourceConfig = { type: 'SentinelOne', id: siteId, name: siteName };
 
             // Client-selection UI doesn't have file cards/drop zones; guard optional elements.
             if (fileCard) fileCard.classList.add('uploaded');
@@ -4205,6 +4206,7 @@
 
             state[`file${fileId}`].uploaded = true;
             state[`file${fileId}`].filename = `${orgName} Devices`;
+            state[`file${fileId}`].sourceConfig = { type: 'NinjaRMM', id: orgId, name: orgName };
 
             // Client-selection UI doesn't have file cards/drop zones; guard optional elements.
             if (fileCard) fileCard.classList.add('uploaded');
@@ -4817,40 +4819,41 @@
 
         async function refreshDataSource(fileId) {
             const btn = document.getElementById(`refresh-data-${fileId}`);
-            const sourceType = state[`file${fileId}`].sourceType;
-            
+            const fileState = state[`file${fileId}`];
+            const sourceType = fileState.sourceType;
+
             if (!btn) {
                 console.error(`Refresh button not found for file ${fileId}`);
                 showToast('Refresh button not found', 'error');
                 return;
             }
-            
+
             if (!sourceType || (sourceType !== 'SentinelOne' && sourceType !== 'NinjaRMM')) {
                 showToast('Cannot refresh this data source', 'error');
                 return;
             }
 
-            // Get stored config for this source
-            const savedConfig = localStorage.getItem('lastSourceConfig');
-            if (!savedConfig) {
-                showToast('No saved configuration found', 'error');
+            // Prefer the currently compared source, fallback to last saved config
+            let fileConfig = fileState.sourceConfig;
+            if (!fileConfig) {
+                const savedConfig = localStorage.getItem('lastSourceConfig');
+                if (!savedConfig) {
+                    showToast('No saved configuration found', 'error');
+                    return;
+                }
+                const config = JSON.parse(savedConfig);
+                fileConfig = config[`file${fileId}`];
+            }
+
+            if (!fileConfig) {
+                showToast('No configuration found for this source', 'error');
                 return;
             }
 
             try {
-                const config = JSON.parse(savedConfig);
-                const fileConfig = config[`file${fileId}`];
-                
-                if (!fileConfig) {
-                    showToast('No configuration found for this source', 'error');
-                    return;
-                }
-
                 // Set loading state
-                if (btn) {
-                    btn.classList.add('loading');
-                    btn.disabled = true;
-                }
+                btn.classList.add('loading');
+                btn.disabled = true;
 
                 if (sourceType === 'SentinelOne') {
                     showToast('Refreshing SentinelOne data...', 'info');
@@ -4867,10 +4870,8 @@
                 console.error('Refresh error:', error);
                 showToast(`Failed to refresh ${sourceType} data: ${error.message}`, 'error');
             } finally {
-                if (btn) {
-                    btn.classList.remove('loading');
-                    btn.disabled = false;
-                }
+                btn.classList.remove('loading');
+                btn.disabled = false;
             }
         }
 
@@ -5128,8 +5129,8 @@
             document.getElementById('selected-client-display').style.display = 'none';
 
             // Reset state
-            state.file1 = { fileId: '1', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] };
-            state.file2 = { fileId: '2', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] };
+            state.file1 = { fileId: '1', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, sourceConfig: null, offlineDevices: [] };
+            state.file2 = { fileId: '2', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, sourceConfig: null, offlineDevices: [] };
             state.primarySources = null;
             state.ad = { attached: false, days: 30, scriptId: state.ad.scriptId, deviceId: state.ad.deviceId, count: 0, receivedAt: null };
             state.adSource = null;
@@ -5294,6 +5295,7 @@
                         state.file1.uploaded = true;
                         state.file1.filename = `${s1Name || 'SentinelOne'} Endpoints`;
                         state.file1.sourceType = 'SentinelOne';
+                        state.file1.sourceConfig = { type: 'SentinelOne', id: s1Id, name: clientName || s1Name };
                         state.file1.offlineDevices = s1Data.offlineDevices;
                         state.file1.sheet = uploadData.sheets[0];
                         state.file1.column = uploadData.columns[0];
@@ -5314,6 +5316,7 @@
                         state.file2.uploaded = true;
                         state.file2.filename = `${ninjaName || 'NinjaRMM'} Devices`;
                         state.file2.sourceType = 'NinjaRMM';
+                        state.file2.sourceConfig = { type: 'NinjaRMM', id: ninjaId, name: clientName || ninjaName };
                         state.file2.offlineDevices = ninjaData.offlineDevices;
                         state.file2.sheet = uploadData.sheets[0];
                         state.file2.column = uploadData.columns[0];
