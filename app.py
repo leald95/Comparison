@@ -1430,6 +1430,7 @@ def trigger_ad_inventory():
         last_resp = None
         last_variant = None
         last_endpoint = None
+        attempts = []
 
         for endpoint in endpoints:
             for param_name, parameters_str in param_variants:
@@ -1446,15 +1447,28 @@ def trigger_ad_inventory():
                         payload['runAs'] = run_as
 
                     last_resp = requests.post(endpoint, json=payload, headers=headers, auth=auth, timeout=30)
+                    attempts.append({
+                        'variant': last_variant,
+                        'endpoint': last_endpoint,
+                        'status': last_resp.status_code,
+                        'body': (last_resp.text or '')[:200]
+                    })
+
                     if last_resp.status_code in (200, 204):
                         return jsonify({'success': True, 'message': 'AD inventory triggered'})
 
                     # Retry only on server-side errors and "not found" (endpoint/resource may differ per tenant).
                     retryable = {500, 404}
                     if last_resp.status_code not in retryable:
-                        return jsonify({'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}'}), last_resp.status_code
+                        return jsonify({
+                            'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}',
+                            'attempts': attempts[-10:]
+                        }), last_resp.status_code
 
-        return jsonify({'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}'}), last_resp.status_code
+        return jsonify({
+            'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}',
+            'attempts': attempts[-10:]
+        }), last_resp.status_code
 
     except requests.exceptions.Timeout:
         return jsonify({'error': 'NinjaRMM API request timed out'}), 504
