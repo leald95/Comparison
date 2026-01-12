@@ -4099,6 +4099,14 @@
             const statsGrid = document.getElementById('stats-grid');
             statsGrid.innerHTML = `
                 <div class="stat-card">
+                    <div class="stat-value blue">${data.stats.total_file1}</div>
+                    <div class="stat-label">Total in ${escapeHtml(displayName1)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value cyan">${data.stats.total_file2}</div>
+                    <div class="stat-label">Total in ${escapeHtml(displayName2)}</div>
+                </div>
+                <div class="stat-card">
                     <div class="stat-value blue">${data.stats.unique_file1}</div>
                     <div class="stat-label">Unique in ${escapeHtml(displayName1)}</div>
                 </div>
