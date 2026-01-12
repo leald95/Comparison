@@ -1406,38 +1406,54 @@ def trigger_ad_inventory():
 
         run_as = (os.getenv('NINJARMM_SCRIPT_RUN_AS') or '').strip()
 
-        # Some Ninja tenants are picky about the script-run payload/parameter format.
-        # Try a key=value-per-line string first, then fall back to JSON string.
+        # Some Ninja tenants are picky about the script-run payload/parameter format and/or fields.
+        # We try multiple parameter encodings and payload shapes to work around tenant-specific quirks.
         param_variants = [
             ('kv_lines', _format_ninja_parameters_kv_lines(script_params)),
             ('json', json.dumps(script_params, separators=(',', ':')))
         ]
 
-        endpoint = f'{api_url}/v2/device/{device_id}/script/run'
+        endpoints = [
+            f'{api_url}/v2/device/{device_id}/script/run',
+            f'{api_url}/v2/devices/{device_id}/script/run'
+        ]
+
+        id_variants = [('id', {'id': script_id})]
+        if script_uid:
+            id_variants.extend([
+                ('uid', {'uid': script_uid}),
+                ('scriptUid', {'scriptUid': script_uid}),
+                ('id+uid', {'id': script_id, 'uid': script_uid}),
+                ('id+scriptUid', {'id': script_id, 'scriptUid': script_uid}),
+            ])
+
         last_resp = None
         last_variant = None
+        last_endpoint = None
 
-        for variant_name, parameters_str in param_variants:
-            last_variant = variant_name
-            payload = {
-                'id': script_id,
-                'type': 'SCRIPT',
-                'parameters': parameters_str
-            }
-            if script_uid:
-                payload['uid'] = script_uid
-            if run_as:
-                payload['runAs'] = run_as
+        for endpoint in endpoints:
+            for param_name, parameters_str in param_variants:
+                for id_name, id_fields in id_variants:
+                    last_endpoint = endpoint
+                    last_variant = f'{param_name}/{id_name}'
 
-            last_resp = requests.post(endpoint, json=payload, headers=headers, auth=auth, timeout=30)
-            if last_resp.status_code in (200, 204):
-                return jsonify({'success': True, 'message': 'AD inventory triggered'})
+                    payload = {
+                        'type': 'SCRIPT',
+                        'parameters': parameters_str,
+                        **id_fields
+                    }
+                    if run_as:
+                        payload['runAs'] = run_as
 
-            # Retry only on 500s (server-side error); for other codes, surface immediately.
-            if last_resp.status_code != 500:
-                break
+                    last_resp = requests.post(endpoint, json=payload, headers=headers, auth=auth, timeout=30)
+                    if last_resp.status_code in (200, 204):
+                        return jsonify({'success': True, 'message': 'AD inventory triggered'})
 
-        return jsonify({'error': f'NinjaRMM API error ({last_variant}): {last_resp.status_code} {last_resp.text[:200]}'}), last_resp.status_code
+                    # Retry only on 500s (server-side error); for other codes, surface immediately.
+                    if last_resp.status_code != 500:
+                        return jsonify({'error': f'NinjaRMM API error ({last_variant}): {last_resp.status_code} {last_resp.text[:200]}'}), last_resp.status_code
+
+        return jsonify({'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}'}), last_resp.status_code
 
     except requests.exceptions.Timeout:
         return jsonify({'error': 'NinjaRMM API request timed out'}), 504
