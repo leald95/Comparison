@@ -2508,7 +2508,10 @@
                     </div>
 
                     <div class="settings-select-wrapper" style="margin-top: 0.75rem;">
-                        <input id="ad-device-id" class="settings-select" type="number" placeholder="Ninja device ID (run on DC)" />
+                        <select id="ad-device-select" class="settings-select">
+                            <option value="">Loading devices...</option>
+                        </select>
+                        <div id="ad-device-status" style="font-size: 0.85rem; margin-top: 0.25rem; color: var(--text-muted);"></div>
                     </div>
 
                     <div class="settings-select-wrapper" style="margin-top: 0.75rem;">
@@ -5470,6 +5473,7 @@
         document.getElementById('settings-btn').addEventListener('click', () => {
             openModal('settings-modal');
             loadNinjaScripts();
+            loadNinjaDevicesForAD();
         });
 
         document.getElementById('settings-modal-close').addEventListener('click', () => closeModal('settings-modal'));
@@ -5509,8 +5513,76 @@
             const savedAdDeviceId = localStorage.getItem('adDeviceId');
             if (savedAdDeviceId) {
                 state.ad.deviceId = parseInt(savedAdDeviceId);
-                const inp = document.getElementById('ad-device-id');
-                if (inp) inp.value = savedAdDeviceId;
+            }
+        }
+
+        // Load available NinjaRMM devices for AD device picker
+        async function loadNinjaDevicesForAD() {
+            const select = document.getElementById('ad-device-select');
+            const statusDiv = document.getElementById('ad-device-status');
+            if (!select) return;
+
+            select.innerHTML = '<option value="">Loading devices...</option>';
+            if (statusDiv) statusDiv.textContent = '';
+
+            try {
+                const response = await fetch('/ninjarmm/devices/all');
+                const data = await response.json();
+
+                if (data.success) {
+                    state.allNinjaDevices = data.devices || [];
+                    select.innerHTML = '<option value="">-- Select a device (DC recommended) --</option>';
+
+                    data.devices.forEach(device => {
+                        const option = document.createElement('option');
+                        option.value = device.id;
+                        option.textContent = device.name;
+                        select.appendChild(option);
+                    });
+
+                    // Restore saved selection
+                    if (state.ad.deviceId) {
+                        select.value = state.ad.deviceId;
+                        validateAdConfig();
+                    }
+                } else {
+                    select.innerHTML = '<option value="">Error loading devices</option>';
+                    if (statusDiv) statusDiv.textContent = data.error || 'Failed to load devices';
+                }
+            } catch (err) {
+                select.innerHTML = '<option value="">Error loading devices</option>';
+                if (statusDiv) statusDiv.textContent = err.message;
+            }
+        }
+
+        // Validate AD configuration (device + script)
+        async function validateAdConfig() {
+            const statusDiv = document.getElementById('ad-device-status');
+            if (!state.ad.deviceId || !state.ad.scriptId) {
+                if (statusDiv) statusDiv.textContent = '';
+                return;
+            }
+
+            if (statusDiv) statusDiv.textContent = 'Validating...';
+
+            try {
+                const resp = await fetch(`/ad/debug?device_id=${state.ad.deviceId}&script_id=${state.ad.scriptId}`);
+                const data = await resp.json();
+
+                if (data.ready) {
+                    if (statusDiv) {
+                        statusDiv.innerHTML = `<span style="color: var(--accent-green);">✓ Valid:</span> ${data.device_info?.systemName || 'Device'} + ${data.script_info?.name || 'Script'}`;
+                    }
+                } else {
+                    let msg = [];
+                    if (data.device_error) msg.push(`Device: ${data.device_error}`);
+                    if (data.script_error) msg.push(`Script: ${data.script_error}`);
+                    if (statusDiv) {
+                        statusDiv.innerHTML = `<span style="color: var(--accent-red);">✗ ${msg.join('; ')}</span>`;
+                    }
+                }
+            } catch (err) {
+                if (statusDiv) statusDiv.textContent = 'Validation failed: ' + err.message;
             }
         }
 
@@ -5601,12 +5673,17 @@
             });
         }
 
-        const adDeviceInput = document.getElementById('ad-device-id');
-        if (adDeviceInput) {
-            adDeviceInput.addEventListener('change', (e) => {
+        const adDeviceSelect = document.getElementById('ad-device-select');
+        if (adDeviceSelect) {
+            adDeviceSelect.addEventListener('change', (e) => {
                 const v = parseInt(e.target.value);
                 state.ad.deviceId = Number.isFinite(v) ? v : null;
-                if (state.ad.deviceId) localStorage.setItem('adDeviceId', state.ad.deviceId);
+                if (state.ad.deviceId) {
+                    localStorage.setItem('adDeviceId', state.ad.deviceId);
+                    validateAdConfig();
+                } else {
+                    localStorage.removeItem('adDeviceId');
+                }
             });
         }
 
@@ -5615,7 +5692,12 @@
             adScriptSelect.addEventListener('change', (e) => {
                 const v = parseInt(e.target.value);
                 state.ad.scriptId = Number.isFinite(v) ? v : null;
-                if (state.ad.scriptId) localStorage.setItem('adScriptId', state.ad.scriptId);
+                if (state.ad.scriptId) {
+                    localStorage.setItem('adScriptId', state.ad.scriptId);
+                    validateAdConfig();
+                } else {
+                    localStorage.removeItem('adScriptId');
+                }
             });
         }
 

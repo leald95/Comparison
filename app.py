@@ -1301,16 +1301,25 @@ def run_ninjarmm_script():
         if run_as:
             payload['runAs'] = run_as
         
-        # Execute script on device
-        endpoint = f'{api_url}/v2/device/{device_id}/script/run'
-        response = requests.post(
-            endpoint,
-            json=payload,
-            headers=headers,
-            auth=auth,
-            timeout=30
-        )
-        
+        # Execute script on device (try /api/v2 first, fallback to /v2)
+        endpoints_to_try = [
+            f'{api_url}/api/v2/device/{device_id}/script/run',
+            f'{api_url}/v2/device/{device_id}/script/run',
+        ]
+        response = None
+        endpoint = None
+        for endpoint in endpoints_to_try:
+            response = requests.post(
+                endpoint,
+                json=payload,
+                headers=headers,
+                auth=auth,
+                timeout=30
+            )
+            if response.status_code in (200, 204):
+                break
+            if response.status_code != 404:
+                break  # Non-404 error, don't retry
         if response.status_code == 204:
             # Success (no content returned)
             return jsonify({
@@ -1413,11 +1422,13 @@ def trigger_ad_inventory():
             ('json', json.dumps(script_params, separators=(',', ':')))
         ]
 
+        # Endpoints to try: /api/v2 first (confirmed working), then /v2 fallback
         endpoints = [
+            f'{api_url}/api/v2/device/{device_id}/script/run',
             f'{api_url}/v2/device/{device_id}/script/run',
-            f'{api_url}/v2/devices/{device_id}/script/run'
         ]
 
+        # Simplified: just use id + type + parameters (confirmed working pattern)
         id_variants = [('id', {'id': script_id})]
         if script_uid:
             id_variants.extend([
@@ -1470,6 +1481,151 @@ def trigger_ad_inventory():
             'attempts': attempts[-10:]
         }), last_resp.status_code
 
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'NinjaRMM API request timed out'}), 504
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'NinjaRMM API connection error: {str(e)}'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/ad/debug', methods=['GET'])
+def ad_debug():
+    """Diagnostic endpoint to validate AD trigger configuration (device_id, script_id)."""
+    device_id = request.args.get('device_id')
+    script_id = request.args.get('script_id')
+
+    result = {
+        'device_id': device_id,
+        'script_id': script_id,
+        'device_valid': False,
+        'device_info': None,
+        'device_error': None,
+        'script_valid': False,
+        'script_info': None,
+        'script_error': None,
+    }
+
+    api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
+
+    try:
+        headers, auth = _get_ninja_auth(api_url)
+    except Exception as e:
+        return jsonify({'error': f'Auth failed: {e}', **result}), 400
+
+    # Validate device_id
+    if device_id:
+        try:
+            device_id_int = int(device_id)
+            # Try /api/v2 first, then /v2
+            device_data = None
+            for endpoint in [f'{api_url}/api/v2/device/{device_id_int}', f'{api_url}/v2/device/{device_id_int}']:
+                try:
+                    r = requests.get(endpoint, headers=headers, auth=auth, timeout=10)
+                    if r.status_code == 200:
+                        device_data = r.json()
+                        result['device_valid'] = True
+                        result['device_info'] = {
+                            'id': device_data.get('id'),
+                            'systemName': device_data.get('systemName'),
+                            'dnsName': device_data.get('dnsName'),
+                            'organizationId': device_data.get('organizationId'),
+                            'lastContact': device_data.get('lastContact'),
+                        }
+                        break
+                    elif r.status_code == 404:
+                        continue
+                    else:
+                        result['device_error'] = f'{endpoint} returned {r.status_code}: {r.text[:100]}'
+                        break
+                except Exception as e:
+                    result['device_error'] = str(e)
+            if not device_data and not result['device_error']:
+                result['device_error'] = 'Device not found (404 on all endpoints)'
+        except ValueError:
+            result['device_error'] = 'device_id must be an integer'
+
+    # Validate script_id
+    if script_id:
+        try:
+            script_id_int = int(script_id)
+            # Fetch scripts list and look for matching ID
+            script_data = None
+            for endpoint in [f'{api_url}/v2/automation/scripts', f'{api_url}/v2/queries/scripts', f'{api_url}/v2/scripts']:
+                try:
+                    r = requests.get(endpoint, headers=headers, auth=auth, timeout=15)
+                    if r.status_code != 200:
+                        continue
+                    scripts = r.json()
+                    if isinstance(scripts, dict):
+                        scripts = scripts.get('data') or scripts.get('items') or scripts.get('scripts') or []
+                    for s in (scripts or []):
+                        if isinstance(s, dict) and int(s.get('id', -1)) == script_id_int:
+                            script_data = s
+                            result['script_valid'] = True
+                            result['script_info'] = {
+                                'id': s.get('id'),
+                                'uid': s.get('uid') or s.get('scriptUid'),
+                                'name': s.get('name'),
+                                'language': s.get('scriptType') or s.get('language'),
+                            }
+                            break
+                    if script_data:
+                        break
+                except Exception:
+                    continue
+            if not script_data and not result['script_error']:
+                result['script_error'] = 'Script not found in any scripts endpoint'
+        except ValueError:
+            result['script_error'] = 'script_id must be an integer'
+
+    result['ready'] = result['device_valid'] and result['script_valid']
+    return jsonify(result)
+
+
+@app.route('/ninjarmm/devices/all', methods=['GET'])
+def get_all_ninjarmm_devices():
+    """Fetch all devices (for AD device picker) with minimal info."""
+    api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
+
+    try:
+        headers, auth = _get_ninja_auth(api_url)
+
+        devices = []
+        page_num = 0
+        page_size = 1000
+
+        while True:
+            params = {'pageSize': page_size, 'page': page_num}
+            endpoint = f'{api_url}/v2/devices'
+
+            response = requests.get(endpoint, headers=headers, auth=auth, params=params, timeout=30)
+            if response.status_code != 200:
+                return jsonify({'error': f'NinjaRMM API error: {response.status_code}'}), response.status_code
+
+            data = response.json()
+            if not data:
+                break
+
+            for device in data:
+                device_name = device.get('systemName') or device.get('dnsName')
+                org_id = device.get('organizationId')
+                if device_name:
+                    devices.append({
+                        'id': device.get('id'),
+                        'name': fix_encoding(device_name),
+                        'organizationId': org_id,
+                    })
+
+            if len(data) < page_size:
+                break
+            page_num += 1
+
+        devices.sort(key=lambda x: x['name'])
+        return jsonify({'success': True, 'devices': devices, 'count': len(devices)})
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except requests.exceptions.Timeout:
         return jsonify({'error': 'NinjaRMM API request timed out'}), 504
     except requests.exceptions.RequestException as e:
