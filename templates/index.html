@@ -2174,6 +2174,14 @@
                 </button>
             </div>
 
+            <!-- AD fetch on compare/results page -->
+            <div id="ad-controls-results" style="display:none; margin-top: 0.75rem; text-align: center;">
+                <div style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.9rem;">
+                    AD inventory: <span id="ad-status-text-results">Not fetched</span>
+                </div>
+                <button type="button" class="history-btn" id="fetch-ad-btn-results">🧩 Fetch AD</button>
+            </div>
+
             <div class="export-btn-container">
                 <button type="button" class="export-btn" id="export-btn">
                     <span>📥 Export to HTML</span>
@@ -5626,16 +5634,23 @@
 
         function updateAdUi() {
             const statusEl = document.getElementById('ad-status-text');
+            const statusElResults = document.getElementById('ad-status-text-results');
             const countEl = document.getElementById('ad-count');
             const compareS1Btn = document.getElementById('compare-s1-ad-btn');
             const compareNinjaBtn = document.getElementById('compare-ninja-ad-btn');
+            const resultsControls = document.getElementById('ad-controls-results');
 
             if (countEl) {
                 countEl.textContent = state.ad.attached ? `${state.ad.count} computers` : 'Not fetched';
             }
 
-            if (statusEl) {
-                statusEl.textContent = state.ad.attached ? `Attached (${state.ad.days}d, ${state.ad.count} computers)` : 'Not fetched';
+            const statusText = state.ad.attached ? `Attached (${state.ad.days}d, ${state.ad.count} computers)` : 'Not fetched';
+            if (statusEl) statusEl.textContent = statusText;
+            if (statusElResults) statusElResults.textContent = statusText;
+
+            // Show the compare-page button only when a client has been loaded
+            if (resultsControls) {
+                resultsControls.style.display = state.primarySources ? 'block' : 'none';
             }
 
             const canCompare = !!(state.ad.attached && state.primarySources);
@@ -5662,11 +5677,8 @@
             const client = state.clientName;
             const days = state.ad.days || 30;
 
-            const btn = document.getElementById('fetch-ad-btn');
-            if (btn) {
-                btn.disabled = true;
-                btn.classList.add('loading');
-            }
+            const btns = [document.getElementById('fetch-ad-btn'), document.getElementById('fetch-ad-btn-results')].filter(Boolean);
+            btns.forEach(b => { b.disabled = true; b.classList.add('loading'); });
 
             try {
                 const triggerResp = await fetch('/ad/trigger', {
@@ -5724,16 +5736,17 @@
             } catch (err) {
                 showToast(err.message || 'AD inventory failed', 'error');
             } finally {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.classList.remove('loading');
-                }
+                const btns = [document.getElementById('fetch-ad-btn'), document.getElementById('fetch-ad-btn-results')].filter(Boolean);
+                btns.forEach(b => { b.disabled = false; b.classList.remove('loading'); });
             }
         }
 
         // AD controls
         const fetchAdBtn = document.getElementById('fetch-ad-btn');
         if (fetchAdBtn) fetchAdBtn.addEventListener('click', fetchAdInventory);
+
+        const fetchAdBtnResults = document.getElementById('fetch-ad-btn-results');
+        if (fetchAdBtnResults) fetchAdBtnResults.addEventListener('click', fetchAdInventory);
 
         const compareS1AdBtn = document.getElementById('compare-s1-ad-btn');
         if (compareS1AdBtn) compareS1AdBtn.addEventListener('click', async () => {
