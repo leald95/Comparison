@@ -64,6 +64,19 @@ if ([string]::IsNullOrWhiteSpace($CustomField)) {
   if ([string]::IsNullOrWhiteSpace($SigningKey)) { Fail "SigningKey is required when CustomField is not provided" }
 }
 
+# If any webhook parameters are provided, ensure all required ones are present
+$hasAnyWebhookParam = (-not [string]::IsNullOrWhiteSpace($ClientName)) -or 
+                      (-not [string]::IsNullOrWhiteSpace($CallbackUrl)) -or 
+                      (-not [string]::IsNullOrWhiteSpace($Nonce)) -or 
+                      (-not [string]::IsNullOrWhiteSpace($SigningKey))
+
+if ($hasAnyWebhookParam) {
+  if ([string]::IsNullOrWhiteSpace($ClientName)) { Fail "ClientName is required when using webhook parameters" }
+  if ([string]::IsNullOrWhiteSpace($CallbackUrl)) { Fail "CallbackUrl is required when using webhook parameters" }
+  if ([string]::IsNullOrWhiteSpace($Nonce)) { Fail "Nonce is required when using webhook parameters" }
+  if ([string]::IsNullOrWhiteSpace($SigningKey)) { Fail "SigningKey is required when using webhook parameters" }
+}
+
 # Validate CallbackUrl if provided
 if (-not [string]::IsNullOrWhiteSpace($CallbackUrl)) {
   try {
@@ -146,7 +159,7 @@ $json = $payload | ConvertTo-Json -Depth 6
 if (-not [string]::IsNullOrWhiteSpace($CustomField)) {
   try {
     Ninja-Property-Set $CustomField $json
-    Write-Host "AD inventory stored in NinjaOne custom field '$CustomField': $($results.Count) computers (>= $Days days)"
+    Write-Host "AD inventory stored in NinjaOne custom field '$CustomField': $($results.Count) computers (within last $Days days)"
   } catch {
     Fail "Failed to set NinjaOne custom field '$CustomField': $($_.Exception.Message)"
   }
@@ -173,7 +186,7 @@ if (-not [string]::IsNullOrWhiteSpace($CallbackUrl) -and -not [string]::IsNullOr
     # [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
     Invoke-RestMethod -Method POST -Uri $CallbackUrl -Headers $headers -ContentType 'application/json' -Body $json -TimeoutSec 60 | Out-Null
-    Write-Host "AD inventory sent successfully: $($results.Count) computers (>= $Days days)"
+    Write-Host "AD inventory sent successfully: $($results.Count) computers (within last $Days days)"
   } catch {
     Fail "Failed to POST to CallbackUrl: $($_.Exception.Message)"
   }
