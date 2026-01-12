@@ -3,12 +3,11 @@ name: CI
 on:
   push:
     branches: [ main ]
-  pull_request:
   workflow_dispatch:
 
 jobs:
   sync:
-    runs-on: self-hosted
+    runs-on: [self-hosted, trusted]
     steps:
       - name: Checkout latest
         uses: actions/checkout@v4
