@@ -224,6 +224,42 @@ For more details on the NinjaRMM API:
 - **Script Run Endpoint:** `/v2/device/{deviceId}/script/run`
 - **Scripts Query:** `/v2/queries/scripts`
 
+## Active Directory Inventory (via Ninja)
+
+This project can optionally use a NinjaRMM-run PowerShell script to query Active Directory for computers that have been active within the last N days, then send that list back to the webapp.
+
+### Flow
+1. Webapp triggers your Ninja script via `POST /ad/trigger`.
+2. Ninja runs the script on the configured device (ideally a DC).
+3. Script POSTs results to the webapp at `POST /ad/intake`.
+4. Browser attaches the received snapshot into the session via `POST /ad/attach`, then you can run comparisons.
+
+### Script parameters (expected)
+Your Ninja PowerShell script should accept these parameters:
+- `Days` (30/60/90)
+- `ClientName` (display name only)
+- `CallbackUrl` (e.g. `https://yourapp/ad/intake`)
+- `Token` (shared secret)
+
+### Script callback
+The script should POST JSON like:
+```json
+{
+  "client": "Client A",
+  "days": 30,
+  "workstations": [
+    {"name": "PC-01", "lastLogonTimestamp": 1700000000}
+  ]
+}
+```
+With header:
+- `X-AD-Intake-Token: <Token>`
+
+### Token rotation
+Configure tokens on the webapp:
+- `AD_INTAKE_TOKEN_CURRENT`
+- `AD_INTAKE_TOKEN_PREVIOUS` (kept temporarily during rotation)
+
 ## Version History
 
 - **v2.1** (2026-01-09): Added script execution functionality

@@ -28,6 +28,10 @@ _NINJA_TOKEN_CACHE = {
     'api_url': None,
 }
 
+# In-process cache for Active Directory device snapshots received from Ninja
+# Key: (client_name, days) -> {path, count, received_at}
+_AD_CACHE = {}
+
 
 def fix_encoding(value):
     """
@@ -391,22 +395,25 @@ def compare_columns():
         return csrf_err
 
     data = request.json
-    
+
+    file1_id = str(data.get('file1_id', '1'))
+    file2_id = str(data.get('file2_id', '2'))
+
     file1_sheet = data.get('file1_sheet')
     file1_column = data.get('file1_column')
     file2_sheet = data.get('file2_sheet')
     file2_column = data.get('file2_column')
-    
+
     if 'files' not in session:
         return jsonify({'error': 'Files not found. Please upload again.'}), 400
-    
-    if '1' not in session['files'] or '2' not in session['files']:
+
+    if file1_id not in session['files'] or file2_id not in session['files']:
         return jsonify({'error': 'Both files must be uploaded.'}), 400
-    
+
     try:
         # Read both files
-        df1 = pd.read_excel(session['files']['1'], sheet_name=file1_sheet)
-        df2 = pd.read_excel(session['files']['2'], sheet_name=file2_sheet)
+        df1 = pd.read_excel(session['files'][file1_id], sheet_name=file1_sheet)
+        df2 = pd.read_excel(session['files'][file2_id], sheet_name=file2_sheet)
         
         # Get the columns and filter out empty values
         col1_data = df1[file1_column].dropna().astype(str).tolist()
@@ -1235,6 +1242,210 @@ def run_ninjarmm_script():
         return jsonify({'error': f'NinjaRMM API connection error: {str(e)}'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/ad/trigger', methods=['POST'])
+def trigger_ad_inventory():
+    """Trigger a NinjaRMM script to inventory Active Directory computers and POST results back to /ad/intake."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
+    token = os.getenv('AD_INTAKE_TOKEN_CURRENT')
+    if not token:
+        return jsonify({'error': 'AD intake token is not configured'}), 500
+
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Invalid JSON body'}), 400
+
+    client = (data.get('client') or '').strip()
+    days = data.get('days')
+    device_id = data.get('device_id')
+    script_id = data.get('script_id')
+
+    if not client:
+        return jsonify({'error': 'client is required'}), 400
+
+    try:
+        days = int(days)
+    except Exception:
+        return jsonify({'error': 'days must be an integer'}), 400
+
+    if days not in (30, 60, 90):
+        return jsonify({'error': 'days must be one of: 30, 60, 90'}), 400
+
+    try:
+        device_id = int(device_id)
+        script_id = int(script_id)
+    except Exception:
+        return jsonify({'error': 'device_id and script_id must be integers'}), 400
+
+    api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
+
+    callback_url = request.host_url.rstrip('/') + '/ad/intake'
+
+    # Parameters are passed through to Ninja; your script should accept these.
+    script_params = {
+        'Days': days,
+        'ClientName': client,
+        'CallbackUrl': callback_url,
+        'Token': token,
+    }
+
+    logger.info('Triggering AD inventory via Ninja: client=%s days=%s device_id=%s script_id=%s', client, days, device_id, script_id)
+
+    try:
+        headers, auth = _get_ninja_auth(api_url)
+        headers = {**headers, 'Content-Type': 'application/json'}
+
+        payload = {
+            'scriptId': script_id,
+            'parameters': script_params
+        }
+
+        endpoint = f'{api_url}/v2/device/{device_id}/script/run'
+        response = requests.post(endpoint, json=payload, headers=headers, auth=auth, timeout=30)
+
+        if response.status_code in (200, 204):
+            return jsonify({'success': True, 'message': 'AD inventory triggered'})
+
+        return jsonify({'error': f'NinjaRMM API error: {response.status_code}'}), response.status_code
+
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'NinjaRMM API request timed out'}), 504
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'NinjaRMM API connection error: {str(e)}'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/ad/intake', methods=['POST'])
+def ad_intake():
+    """Receive AD computer inventory from a Ninja-run script."""
+    current = os.getenv('AD_INTAKE_TOKEN_CURRENT')
+    previous = os.getenv('AD_INTAKE_TOKEN_PREVIOUS')
+    if not current and not previous:
+        return jsonify({'error': 'AD intake token is not configured'}), 500
+
+    provided = request.headers.get('X-AD-Intake-Token')
+    if not provided or provided not in {t for t in (current, previous) if t}:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'Invalid JSON body'}), 400
+
+    client = (payload.get('client') or payload.get('clientName') or '').strip()
+    days = payload.get('days')
+    items = payload.get('workstations') or payload.get('computers') or []
+
+    if not client:
+        return jsonify({'error': 'client is required'}), 400
+
+    try:
+        days = int(days)
+    except Exception:
+        return jsonify({'error': 'days must be an integer'}), 400
+
+    if days not in (30, 60, 90):
+        return jsonify({'error': 'days must be one of: 30, 60, 90'}), 400
+
+    if not isinstance(items, list):
+        return jsonify({'error': 'workstations must be a list'}), 400
+
+    names = []
+    for it in items:
+        if isinstance(it, dict):
+            name = it.get('name')
+        else:
+            name = it
+        if name:
+            names.append(fix_encoding(name).strip())
+
+    names = [n for n in names if n]
+
+    # Save as a virtual Excel file to reuse existing compare flow
+    uploads_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
+    filename = f'ad_computers_{uuid.uuid4().hex}.xlsx'
+    filepath = os.path.join(uploads_root, filename)
+
+    df = pd.DataFrame({'Computer Name': names})
+    df.to_excel(filepath, index=False, engine='openpyxl')
+
+    _AD_CACHE[(client, days)] = {
+        'path': filepath,
+        'count': len(names),
+        'received_at': int(time.time()),
+    }
+
+    logger.info('Received AD inventory: client=%s days=%s count=%s from=%s', client, days, len(names), request.remote_addr)
+
+    return jsonify({'success': True, 'client': client, 'days': days, 'count': len(names)})
+
+
+@app.route('/ad/status', methods=['GET'])
+def ad_status():
+    client = (request.args.get('client') or '').strip()
+    try:
+        days = int(request.args.get('days') or 30)
+    except Exception:
+        days = 30
+
+    entry = _AD_CACHE.get((client, days)) if client else None
+    if not entry:
+        return jsonify({'success': True, 'available': False})
+
+    return jsonify({
+        'success': True,
+        'available': True,
+        'client': client,
+        'days': days,
+        'count': entry.get('count', 0),
+        'received_at': entry.get('received_at')
+    })
+
+
+@app.route('/ad/attach', methods=['POST'])
+def ad_attach():
+    """Attach a previously received AD snapshot to the current session as file_id=3."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Invalid JSON body'}), 400
+
+    client = (data.get('client') or '').strip()
+    days = data.get('days')
+    file_id = str(data.get('file_id', '3'))
+
+    if not client:
+        return jsonify({'error': 'client is required'}), 400
+
+    try:
+        days = int(days)
+    except Exception:
+        return jsonify({'error': 'days must be an integer'}), 400
+
+    entry = _AD_CACHE.get((client, days))
+    if not entry:
+        return jsonify({'error': 'AD snapshot not available yet'}), 404
+
+    if 'files' not in session:
+        session['files'] = {}
+
+    session['files'][file_id] = entry['path']
+    session.modified = True
+
+    return jsonify({
+        'success': True,
+        'filename': 'Active Directory',
+        'sheets': ['Sheet1'],
+        'columns': ['Computer Name'],
+        'row_count': entry.get('count', 0)
+    })
 
 
 @app.route('/cleanup', methods=['POST'])

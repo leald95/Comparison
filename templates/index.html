@@ -2322,6 +2322,27 @@
                             </div>
                             <div class="source-summary-count" id="ninja-count">0 devices</div>
                         </div>
+                        <div class="source-summary-card">
+                            <div class="source-summary-header">
+                                <span class="source-icon">🧩</span>
+                                <span class="source-name">Active Directory</span>
+                            </div>
+                            <div class="source-summary-count" id="ad-count">Not fetched</div>
+                        </div>
+                    </div>
+
+                    <div id="ad-controls" style="display:none; margin-top: 1rem; text-align: center;">
+                        <div style="margin-bottom: 0.75rem; color: var(--text-secondary); font-size: 0.9rem;">
+                            AD inventory: <span id="ad-status-text">Not fetched</span>
+                        </div>
+                        <div style="display:flex; gap:0.75rem; justify-content:center; flex-wrap:wrap;">
+                            <button type="button" class="select-client-main-btn" id="fetch-ad-btn">
+                                <span class="btn-text">🧩 Fetch AD</span>
+                            </button>
+                            <button type="button" class="history-btn" id="compare-s1-ad-btn" disabled>Compare S1 vs AD</button>
+                            <button type="button" class="history-btn" id="compare-ninja-ad-btn" disabled>Compare Ninja vs AD</button>
+                            <button type="button" class="history-btn" id="compare-primary-btn" style="display:none;">Compare S1 vs Ninja</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2458,6 +2479,37 @@
                         ⚠️ <strong>Note:</strong> The remediation script will only run on devices that are currently online in NinjaRMM (last contact within 5 minutes).
                     </div>
                 </div>
+
+                <div class="settings-section">
+                    <div class="settings-section-title">
+                        🧩 Active Directory Inventory (via Ninja)
+                    </div>
+                    <div class="settings-section-desc">
+                        Configure the NinjaRMM script/device used to query Active Directory and send back a list of computers active within the last 30/60/90 days.
+                    </div>
+
+                    <div class="settings-select-wrapper">
+                        <select id="ad-days-select" class="settings-select">
+                            <option value="30" selected>30 days</option>
+                            <option value="60">60 days</option>
+                            <option value="90">90 days</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-select-wrapper" style="margin-top: 0.75rem;">
+                        <input id="ad-device-id" class="settings-select" type="number" placeholder="Ninja device ID (run on DC)" />
+                    </div>
+
+                    <div class="settings-select-wrapper" style="margin-top: 0.75rem;">
+                        <select id="ad-script-select" class="settings-select">
+                            <option value="">Loading scripts...</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-warning">
+                        ⚠️ <strong>Note:</strong> The selected device must have AD query capability (e.g., DC with RSAT/AD module). The webapp will trigger the script and wait for it to POST results back.
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -2481,8 +2533,11 @@
 
         // State
         const state = {
-            file1: { uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] },
-            file2: { uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] },
+            file1: { fileId: '1', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] },
+            file2: { fileId: '2', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] },
+            primarySources: null, // snapshot of the main S1 vs Ninja sources
+            ad: { attached: false, days: 30, scriptId: null, deviceId: null, count: 0, receivedAt: null },
+            adSource: null,
             currentFileIdForS1: null,
             pendingCacheChoice: null,
             testingViewSort: { field: 'name', direction: 'asc' },
@@ -4260,6 +4315,8 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        file1_id: state.file1.fileId || '1',
+                        file2_id: state.file2.fileId || '2',
                         file1_sheet: state.file1.sheet,
                         file1_column: state.file1.column,
                         file2_sheet: state.file2.sheet,
@@ -5066,9 +5123,19 @@
             document.getElementById('selected-client-display').style.display = 'none';
 
             // Reset state
-            state.file1 = { uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] };
-            state.file2 = { uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] };
+            state.file1 = { fileId: '1', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] };
+            state.file2 = { fileId: '2', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] };
+            state.primarySources = null;
+            state.ad = { attached: false, days: 30, scriptId: state.ad.scriptId, deviceId: state.ad.deviceId, count: 0, receivedAt: null };
+            state.adSource = null;
             state.clientName = null;
+
+            const adControls = document.getElementById('ad-controls');
+            if (adControls) adControls.style.display = 'none';
+            const comparePrimaryBtn = document.getElementById('compare-primary-btn');
+            if (comparePrimaryBtn) comparePrimaryBtn.style.display = 'none';
+            updateAdUi();
+
             // Note: Don't reset lastHistorySave - keep debounce protection across multiple runs
 
             // Update quick load button visibility
@@ -5198,6 +5265,9 @@
 
                 // Show summary
                 document.getElementById('sources-summary').style.display = 'grid';
+                const adControls = document.getElementById('ad-controls');
+                if (adControls) adControls.style.display = 'block';
+                updateAdUi();
 
                 // Validate we have at least one data source
                 if (!s1Data && !ninjaData) {
@@ -5252,6 +5322,8 @@
                 // Automatically run comparison
                 await new Promise(resolve => setTimeout(resolve, 500)); // Brief delay for UX
                 await runComparison();
+                snapshotPrimarySources();
+                updateAdUi();
 
                 // Update status to complete
                 document.getElementById('status-comparing').style.display = 'none';
@@ -5303,12 +5375,31 @@
             if (savedScriptId) {
                 state.remediationScriptId = parseInt(savedScriptId);
             }
-            
+
             const savedOfflineDays = localStorage.getItem('offlineDaysThreshold');
             if (savedOfflineDays) {
                 state.offlineDaysThreshold = parseInt(savedOfflineDays);
                 const select = document.getElementById('offline-days-select');
                 if (select) select.value = savedOfflineDays;
+            }
+
+            const savedAdDays = localStorage.getItem('adDays');
+            if (savedAdDays) {
+                state.ad.days = parseInt(savedAdDays);
+                const sel = document.getElementById('ad-days-select');
+                if (sel) sel.value = savedAdDays;
+            }
+
+            const savedAdScriptId = localStorage.getItem('adScriptId');
+            if (savedAdScriptId) {
+                state.ad.scriptId = parseInt(savedAdScriptId);
+            }
+
+            const savedAdDeviceId = localStorage.getItem('adDeviceId');
+            if (savedAdDeviceId) {
+                state.ad.deviceId = parseInt(savedAdDeviceId);
+                const inp = document.getElementById('ad-device-id');
+                if (inp) inp.value = savedAdDeviceId;
             }
         }
 
@@ -5323,8 +5414,12 @@
                 
                 if (data.success) {
                     state.availableScripts = data.scripts;
-                    
+
+                    const adSelect = document.getElementById('ad-script-select');
+
                     select.innerHTML = '<option value="">-- Select a script --</option>';
+                    if (adSelect) adSelect.innerHTML = '<option value="">-- Select a script --</option>';
+
                     data.scripts.forEach(script => {
                         const option = document.createElement('option');
                         option.value = script.id;
@@ -5332,12 +5427,21 @@
                         option.dataset.description = script.description || '';
                         option.dataset.category = script.category || '';
                         select.appendChild(option);
+
+                        if (adSelect) {
+                            const opt2 = option.cloneNode(true);
+                            adSelect.appendChild(opt2);
+                        }
                     });
-                    
-                    // Restore saved selection
+
+                    // Restore saved selections
                     if (state.remediationScriptId) {
                         select.value = state.remediationScriptId;
                         updateScriptInfo(state.remediationScriptId);
+                    }
+
+                    if (adSelect && state.ad.scriptId) {
+                        adSelect.value = state.ad.scriptId;
                     }
                 } else {
                     select.innerHTML = '<option value="">Error loading scripts</option>';
@@ -5375,6 +5479,188 @@
             state.offlineDaysThreshold = days;
             localStorage.setItem('offlineDaysThreshold', days);
             showToast(`Offline threshold set to ${days} days`, 'success');
+        });
+
+        // AD inventory settings
+        const adDaysSelect = document.getElementById('ad-days-select');
+        if (adDaysSelect) {
+            adDaysSelect.addEventListener('change', (e) => {
+                state.ad.days = parseInt(e.target.value);
+                localStorage.setItem('adDays', state.ad.days);
+            });
+        }
+
+        const adDeviceInput = document.getElementById('ad-device-id');
+        if (adDeviceInput) {
+            adDeviceInput.addEventListener('change', (e) => {
+                const v = parseInt(e.target.value);
+                state.ad.deviceId = Number.isFinite(v) ? v : null;
+                if (state.ad.deviceId) localStorage.setItem('adDeviceId', state.ad.deviceId);
+            });
+        }
+
+        const adScriptSelect = document.getElementById('ad-script-select');
+        if (adScriptSelect) {
+            adScriptSelect.addEventListener('change', (e) => {
+                const v = parseInt(e.target.value);
+                state.ad.scriptId = Number.isFinite(v) ? v : null;
+                if (state.ad.scriptId) localStorage.setItem('adScriptId', state.ad.scriptId);
+            });
+        }
+
+        function snapshotPrimarySources() {
+            if (state.primarySources) return;
+            if (!state.file1.uploaded || !state.file2.uploaded) return;
+            state.primarySources = {
+                file1: JSON.parse(JSON.stringify(state.file1)),
+                file2: JSON.parse(JSON.stringify(state.file2))
+            };
+        }
+
+        function applySource(slot, src) {
+            Object.assign(slot, JSON.parse(JSON.stringify(src)));
+        }
+
+        function updateAdUi() {
+            const statusEl = document.getElementById('ad-status-text');
+            const countEl = document.getElementById('ad-count');
+            const compareS1Btn = document.getElementById('compare-s1-ad-btn');
+            const compareNinjaBtn = document.getElementById('compare-ninja-ad-btn');
+
+            if (countEl) {
+                countEl.textContent = state.ad.attached ? `${state.ad.count} computers` : 'Not fetched';
+            }
+
+            if (statusEl) {
+                statusEl.textContent = state.ad.attached ? `Attached (${state.ad.days}d, ${state.ad.count} computers)` : 'Not fetched';
+            }
+
+            const canCompare = !!(state.ad.attached && state.primarySources);
+            if (compareS1Btn) compareS1Btn.disabled = !canCompare;
+            if (compareNinjaBtn) compareNinjaBtn.disabled = !canCompare;
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function fetchAdInventory() {
+            snapshotPrimarySources();
+            if (!state.primarySources) {
+                showToast('Select a client and load Ninja/S1 first', 'error');
+                return;
+            }
+
+            if (!state.ad.scriptId || !state.ad.deviceId) {
+                showToast('Configure AD script + device ID in Settings first', 'error');
+                return;
+            }
+
+            const client = state.clientName;
+            const days = state.ad.days || 30;
+
+            const btn = document.getElementById('fetch-ad-btn');
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('loading');
+            }
+
+            try {
+                const triggerResp = await fetch('/ad/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        client,
+                        days,
+                        device_id: state.ad.deviceId,
+                        script_id: state.ad.scriptId
+                    })
+                });
+
+                const triggerData = await triggerResp.json();
+                if (!triggerData.success) throw new Error(triggerData.error || 'Failed to trigger AD inventory');
+
+                // Poll for intake
+                let status = null;
+                for (let i = 0; i < 30; i++) {
+                    await sleep(2000);
+                    const stResp = await fetch(`/ad/status?client=${encodeURIComponent(client)}&days=${days}`);
+                    status = await stResp.json();
+                    if (status && status.available) break;
+                }
+
+                if (!status || !status.available) {
+                    throw new Error('Timed out waiting for AD results');
+                }
+
+                const attachResp = await fetch('/ad/attach', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ client, days, file_id: '3' })
+                });
+
+                const attachData = await attachResp.json();
+                if (!attachData.success) throw new Error(attachData.error || 'Failed to attach AD snapshot');
+
+                state.ad.attached = true;
+                state.ad.count = attachData.row_count || status.count || 0;
+                state.ad.receivedAt = status.received_at || null;
+                state.adSource = {
+                    fileId: '3',
+                    uploaded: true,
+                    sheet: attachData.sheets[0],
+                    column: attachData.columns[0],
+                    filename: `Active Directory (${days}d)`,
+                    sourceType: 'Active Directory',
+                    offlineDevices: []
+                };
+
+                updateAdUi();
+                showToast(`AD inventory received (${state.ad.count} computers)`, 'success');
+
+            } catch (err) {
+                showToast(err.message || 'AD inventory failed', 'error');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('loading');
+                }
+            }
+        }
+
+        // AD controls
+        const fetchAdBtn = document.getElementById('fetch-ad-btn');
+        if (fetchAdBtn) fetchAdBtn.addEventListener('click', fetchAdInventory);
+
+        const compareS1AdBtn = document.getElementById('compare-s1-ad-btn');
+        if (compareS1AdBtn) compareS1AdBtn.addEventListener('click', async () => {
+            snapshotPrimarySources();
+            if (!state.primarySources || !state.adSource) return;
+
+            applySource(state.file1, state.primarySources.file1);
+            applySource(state.file2, state.adSource);
+            document.getElementById('compare-primary-btn').style.display = 'inline-flex';
+            await runComparison();
+        });
+
+        const compareNinjaAdBtn = document.getElementById('compare-ninja-ad-btn');
+        if (compareNinjaAdBtn) compareNinjaAdBtn.addEventListener('click', async () => {
+            snapshotPrimarySources();
+            if (!state.primarySources || !state.adSource) return;
+
+            applySource(state.file1, state.primarySources.file2);
+            applySource(state.file2, state.adSource);
+            document.getElementById('compare-primary-btn').style.display = 'inline-flex';
+            await runComparison();
+        });
+
+        const comparePrimaryBtn = document.getElementById('compare-primary-btn');
+        if (comparePrimaryBtn) comparePrimaryBtn.addEventListener('click', async () => {
+            if (!state.primarySources) return;
+            applySource(state.file1, state.primarySources.file1);
+            applySource(state.file2, state.primarySources.file2);
+            comparePrimaryBtn.style.display = 'none';
+            await runComparison();
         });
 
         function updateScriptInfo(scriptId) {
