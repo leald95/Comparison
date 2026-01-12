@@ -1307,7 +1307,7 @@ def trigger_ad_inventory():
 
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
 
-    callback_url = request.host_url.rstrip('/') + '/ad/intake'
+    callback_url = (os.getenv('AD_CALLBACK_URL') or '').strip() or (request.host_url.rstrip('/') + '/ad/intake')
 
     # Parameters are passed through to Ninja; your script should accept these.
     script_params = {
