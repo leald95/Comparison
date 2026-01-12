@@ -2144,6 +2144,9 @@
                 <button type="button" class="settings-btn" id="settings-btn">
                     ⚙️ Settings
                 </button>
+                <button type="button" class="history-btn" id="debug-btn" title="Debug: show Ninja script/device IDs">
+                    🧰 Debug
+                </button>
             </div>
         </header>
 
@@ -2514,6 +2517,29 @@
                     <div class="settings-warning">
                         ⚠️ <strong>Note:</strong> The selected device must have AD query capability (e.g., DC with RSAT/AD module). The webapp will trigger the script and wait for it to POST results back.
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Debug Modal (Script/Device IDs) -->
+    <div class="modal-overlay" id="debug-modal">
+        <div class="modal" id="debug-modal-content-wrapper">
+            <div class="modal-header">
+                <h2 class="modal-title">🧰 Debug IDs</h2>
+                <button type="button" class="modal-close" id="debug-modal-close">✕</button>
+            </div>
+            <div class="modal-content" style="padding: 2rem;">
+                <div class="settings-section">
+                    <div class="settings-section-title">📜 Ninja Scripts (IDs)</div>
+                    <div class="settings-section-desc">Use the ID in Settings → AD Script. Click a row to copy the script ID.</div>
+                    <div id="debug-scripts" style="margin-top: 0.75rem;"></div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-section-title">💻 Ninja Devices (IDs)</div>
+                    <div class="settings-section-desc">Use the device ID of your DC/AD query host in Settings → AD Device ID. Click a row to copy the device ID (requires you loaded Ninja devices for a client).</div>
+                    <div id="debug-devices" style="margin-top: 0.75rem;"></div>
                 </div>
             </div>
         </div>
@@ -5096,15 +5122,17 @@
         document.getElementById('ninja-modal-close').addEventListener('click', closeNinjaModal);
         document.getElementById('unified-client-modal-close').addEventListener('click', closeUnifiedClientModal);
         document.getElementById('history-modal-close').addEventListener('click', () => closeModal('history-modal'));
+        document.getElementById('debug-modal-close').addEventListener('click', () => closeModal('debug-modal'));
 
         // Prevent clicks inside modals from closing them
         document.getElementById('modal-content').addEventListener('click', e => e.stopPropagation());
         document.getElementById('ninja-modal-content-wrapper').addEventListener('click', e => e.stopPropagation());
         document.getElementById('unified-client-modal-content-wrapper').addEventListener('click', e => e.stopPropagation());
         document.querySelector('#history-modal .modal').addEventListener('click', e => e.stopPropagation());
+        document.getElementById('debug-modal-content-wrapper').addEventListener('click', e => e.stopPropagation());
 
         // Close modals when clicking on overlay background
-        ['site-modal', 'ninja-modal', 'unified-client-modal', 'history-modal'].forEach(id => {
+        ['site-modal', 'ninja-modal', 'unified-client-modal', 'history-modal', 'settings-modal', 'debug-modal'].forEach(id => {
             document.getElementById(id).addEventListener('click', (e) => {
                 if (e.target.classList.contains('modal-overlay')) {
                     if (id === 'site-modal') closeSiteModal();
@@ -5195,6 +5223,73 @@
 
         // History button
         document.getElementById('history-btn').addEventListener('click', () => openModal('history-modal'));
+
+        function renderDebugIds() {
+            const scriptsEl = document.getElementById('debug-scripts');
+            const devicesEl = document.getElementById('debug-devices');
+
+            if (scriptsEl) {
+                const scripts = Array.isArray(state.availableScripts) ? state.availableScripts : [];
+                if (!scripts.length) {
+                    scriptsEl.innerHTML = `<div class="settings-warning">No scripts loaded yet. Open Settings once (or click Debug again) to load scripts.</div>`;
+                } else {
+                    scriptsEl.innerHTML = `
+                        <div style="display:grid; gap:0.5rem;">
+                            ${scripts.map(s => `
+                                <button type="button" class="history-btn" style="text-align:left; justify-content:flex-start;" data-script-id="${s.id}">
+                                    <span style="min-width:80px; font-family:'JetBrains Mono', monospace;">${s.id}</span>
+                                    <span>${escapeHtml(s.name || 'Unnamed Script')}</span>
+                                </button>
+                            `).join('')}
+                        </div>
+                    `;
+
+                    scriptsEl.querySelectorAll('[data-script-id]').forEach(btn => {
+                        btn.addEventListener('click', async () => {
+                            const id = btn.getAttribute('data-script-id');
+                            try { await navigator.clipboard.writeText(String(id)); } catch (e) { }
+                            showToast(`Copied script ID: ${id}`, 'success');
+                        });
+                    });
+                }
+            }
+
+            if (devicesEl) {
+                const devices = Array.isArray(state.ninjaDevices) ? state.ninjaDevices : [];
+                if (!devices.length) {
+                    devicesEl.innerHTML = `<div class="settings-warning">No Ninja devices loaded yet. Load a client (Ninja) first so device IDs are available.</div>`;
+                } else {
+                    const top = devices.slice(0, 200);
+                    devicesEl.innerHTML = `
+                        <div class="settings-info">Showing ${top.length}${devices.length > top.length ? ` of ${devices.length}` : ''} devices (click to copy ID).</div>
+                        <div style="display:grid; gap:0.5rem; margin-top:0.75rem;">
+                            ${top.map(d => `
+                                <button type="button" class="history-btn" style="text-align:left; justify-content:flex-start;" data-device-id="${d.id}">
+                                    <span style="min-width:80px; font-family:'JetBrains Mono', monospace;">${d.id}</span>
+                                    <span>${escapeHtml(d.name || 'Unnamed Device')}</span>
+                                </button>
+                            `).join('')}
+                        </div>
+                    `;
+
+                    devicesEl.querySelectorAll('[data-device-id]').forEach(btn => {
+                        btn.addEventListener('click', async () => {
+                            const id = btn.getAttribute('data-device-id');
+                            try { await navigator.clipboard.writeText(String(id)); } catch (e) { }
+                            showToast(`Copied device ID: ${id}`, 'success');
+                        });
+                    });
+                }
+            }
+        }
+
+        // Debug button
+        document.getElementById('debug-btn').addEventListener('click', async () => {
+            openModal('debug-modal');
+            // Ensure scripts are loaded if possible (same endpoint used by Settings)
+            try { await loadNinjaScripts(); } catch (e) { }
+            renderDebugIds();
+        });
 
         // Sorting for Testing View
         document.querySelectorAll('.testing-table th').forEach(th => {
