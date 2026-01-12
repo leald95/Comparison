@@ -1134,15 +1134,17 @@ def cleanup():
 
     - Removes files referenced by the current session.
     - Prunes old files from uploads/ to avoid orphan buildup.
+
+    Note: this endpoint is called from a `beforeunload` handler where CSRF/session
+    data can be missing; we treat that case as a no-op for session cleanup.
     """
     csrf_err = _require_csrf()
-    if csrf_err:
-        return csrf_err
+    csrf_ok = not bool(csrf_err)
 
     uploads_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
 
-    # 1) Remove session-tracked files
-    if 'files' in session:
+    # 1) Remove session-tracked files (only when CSRF token is valid)
+    if csrf_ok and 'files' in session:
         for file_id, filepath in session['files'].items():
             try:
                 abs_path = os.path.abspath(filepath)
