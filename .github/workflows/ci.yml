@@ -9,7 +9,8 @@ jobs:
   sync:
     runs-on: [self-hosted, trusted]
     steps:
-      - name: Checkout latest
+      - name: Checkout latest (keep workspace)
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          clean: false
