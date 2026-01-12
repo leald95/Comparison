@@ -1451,12 +1451,15 @@ def trigger_ad_inventory():
 
                     payload = {
                         'type': 'SCRIPT',
-                        'parameters': parameters_str,
                         **id_fields
                     }
+                    # Only include parameters if non-empty
+                    if parameters_str:
+                        payload['parameters'] = parameters_str
                     if run_as:
                         payload['runAs'] = run_as
 
+                    logger.info('Trying Ninja script-run: endpoint=%s variant=%s payload=%s', last_endpoint, last_variant, payload)
                     last_resp = requests.post(endpoint, json=payload, headers=headers, auth=auth, timeout=30)
                     attempts.append({
                         'variant': last_variant,
@@ -1466,16 +1469,19 @@ def trigger_ad_inventory():
                     })
 
                     if last_resp.status_code in (200, 204):
+                        logger.info('Ninja script-run succeeded: variant=%s status=%s', last_variant, last_resp.status_code)
                         return jsonify({'success': True, 'message': 'AD inventory triggered'})
 
                     # Retry only on server-side errors and "not found" (endpoint/resource may differ per tenant).
                     retryable = {500, 404}
                     if last_resp.status_code not in retryable:
+                        logger.warning('Ninja script-run non-retryable error: variant=%s status=%s body=%s', last_variant, last_resp.status_code, last_resp.text[:200])
                         return jsonify({
                             'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}',
                             'attempts': attempts[-10:]
                         }), last_resp.status_code
 
+        logger.error('Ninja script-run exhausted all attempts: last_variant=%s last_status=%s', last_variant, last_resp.status_code if last_resp else 'none')
         return jsonify({
             'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}',
             'attempts': attempts[-10:]
