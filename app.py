@@ -248,6 +248,67 @@ def _get_ninja_auth(api_url):
     raise ValueError('NinjaRMM API credentials not configured.')
 
 
+def _lookup_ninja_script_uid(api_url, headers, auth, script_id):
+    """Best-effort lookup of a script UID for a numeric script_id.
+
+    Some Ninja endpoints require/accept a `uid` field when running scripts; providing it can avoid
+    server-side errors for certain accounts/scripts.
+    """
+    possible_endpoints = [
+        f'{api_url}/v2/automation/scripts',
+        f'{api_url}/v2/queries/scripts',
+        f'{api_url}/v2/scripts'
+    ]
+
+    for endpoint in possible_endpoints:
+        try:
+            r = requests.get(endpoint, headers=headers, auth=auth, timeout=15)
+            if r.status_code != 200:
+                continue
+
+            data = r.json()
+            if isinstance(data, dict):
+                # Some APIs wrap results (best-effort).
+                data = (
+                    data.get('data')
+                    or data.get('items')
+                    or data.get('results')
+                    or data.get('scripts')
+                    or []
+                )
+
+            if not isinstance(data, list):
+                continue
+
+            for s in data:
+                if not isinstance(s, dict):
+                    continue
+                sid = s.get('id')
+                try:
+                    if int(sid) != int(script_id):
+                        continue
+                except Exception:
+                    continue
+
+                uid = s.get('uid') or s.get('scriptUid')
+                if uid:
+                    return uid
+        except Exception:
+            continue
+
+    return None
+
+
+def _format_ninja_parameters_kv_lines(params: dict) -> str:
+    # Common format expected by some Ninja script runners: key=value, one per line.
+    lines = []
+    for k, v in (params or {}).items():
+        if v is None:
+            continue
+        lines.append(f"{k}={v}")
+    return "\n".join(lines)
+
+
 def read_excel_file(filepath):
     """Read Excel file and return dataframe with sheet info."""
     try:
@@ -1226,11 +1287,19 @@ def run_ninjarmm_script():
         # Prepare script execution payload
         # Ninja expects fields like: id/type/uid/runAs/parameters (not scriptId)
         # Note: Ninja expects parameters as a string.
+        script_uid = _lookup_ninja_script_uid(api_url, headers, auth, script_id)
+
         payload = {
             'id': script_id,
             'type': 'SCRIPT',
             'parameters': ninja_parameters
         }
+        if script_uid:
+            payload['uid'] = script_uid
+
+        run_as = (os.getenv('NINJARMM_SCRIPT_RUN_AS') or '').strip()
+        if run_as:
+            payload['runAs'] = run_as
         
         # Execute script on device
         endpoint = f'{api_url}/v2/device/{device_id}/script/run'
@@ -1333,19 +1402,42 @@ def trigger_ad_inventory():
         headers, auth = _get_ninja_auth(api_url)
         headers = {**headers, 'Content-Type': 'application/json'}
 
-        payload = {
-            'id': script_id,
-            'type': 'SCRIPT',
-            'parameters': json.dumps(script_params, separators=(',', ':'))
-        }
+        script_uid = _lookup_ninja_script_uid(api_url, headers, auth, script_id)
+
+        run_as = (os.getenv('NINJARMM_SCRIPT_RUN_AS') or '').strip()
+
+        # Some Ninja tenants are picky about the script-run payload/parameter format.
+        # Try a key=value-per-line string first, then fall back to JSON string.
+        param_variants = [
+            ('kv_lines', _format_ninja_parameters_kv_lines(script_params)),
+            ('json', json.dumps(script_params, separators=(',', ':')))
+        ]
 
         endpoint = f'{api_url}/v2/device/{device_id}/script/run'
-        response = requests.post(endpoint, json=payload, headers=headers, auth=auth, timeout=30)
+        last_resp = None
+        last_variant = None
 
-        if response.status_code in (200, 204):
-            return jsonify({'success': True, 'message': 'AD inventory triggered'})
+        for variant_name, parameters_str in param_variants:
+            last_variant = variant_name
+            payload = {
+                'id': script_id,
+                'type': 'SCRIPT',
+                'parameters': parameters_str
+            }
+            if script_uid:
+                payload['uid'] = script_uid
+            if run_as:
+                payload['runAs'] = run_as
 
-        return jsonify({'error': f'NinjaRMM API error: {response.status_code} {response.text[:200]}'}), response.status_code
+            last_resp = requests.post(endpoint, json=payload, headers=headers, auth=auth, timeout=30)
+            if last_resp.status_code in (200, 204):
+                return jsonify({'success': True, 'message': 'AD inventory triggered'})
+
+            # Retry only on 500s (server-side error); for other codes, surface immediately.
+            if last_resp.status_code != 500:
+                break
+
+        return jsonify({'error': f'NinjaRMM API error ({last_variant}): {last_resp.status_code} {last_resp.text[:200]}'}), last_resp.status_code
 
     except requests.exceptions.Timeout:
         return jsonify({'error': 'NinjaRMM API request timed out'}), 504
