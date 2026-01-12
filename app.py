@@ -101,6 +101,11 @@ app = Flask(__name__)
 # Use a stable secret key if provided; falls back to a random key for local dev.
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY') or os.urandom(24)
 
+# Session cookie hardening (recommended for LAN/prod)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', '0') in ('1', 'true', 'True')
+
 
 def _require_basic_auth():
     if os.getenv('ENABLE_BASIC_AUTH', '0') not in ('1', 'true', 'True'):
@@ -127,6 +132,20 @@ def _normalize_session_files_keys():
     files = session.get('files')
     if isinstance(files, dict):
         session['files'] = {str(k): v for k, v in files.items()}
+
+
+@app.after_request
+def _set_security_headers(resp):
+    resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    resp.headers.setdefault('X-Frame-Options', 'DENY')
+    resp.headers.setdefault('Referrer-Policy', 'no-referrer')
+    resp.headers.setdefault('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
+    # SPA uses inline <style>/<script>, so CSP must allow 'unsafe-inline' unless refactored to nonces.
+    resp.headers.setdefault(
+        'Content-Security-Policy',
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'"
+    )
+    return resp
 
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max
