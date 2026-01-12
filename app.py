@@ -1585,8 +1585,11 @@ def ad_debug():
 
 @app.route('/ninjarmm/devices/all', methods=['GET'])
 def get_all_ninjarmm_devices():
-    """Fetch all devices (for AD device picker) with minimal info."""
+    """Fetch all devices (for AD device picker) with minimal info, optionally filtered by org_id."""
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
+    org_id = request.args.get('org_id')
+    if org_id in [None, '', 'all', 'null', 'undefined']:
+        org_id = None
 
     try:
         headers, auth = _get_ninja_auth(api_url)
@@ -1597,7 +1600,8 @@ def get_all_ninjarmm_devices():
 
         while True:
             params = {'pageSize': page_size, 'page': page_num}
-            endpoint = f'{api_url}/v2/devices'
+            # Use org-specific endpoint if org_id provided
+            endpoint = f'{api_url}/v2/organization/{org_id}/devices' if org_id else f'{api_url}/v2/devices'
 
             response = requests.get(endpoint, headers=headers, auth=auth, params=params, timeout=30)
             if response.status_code != 200:
@@ -1609,12 +1613,12 @@ def get_all_ninjarmm_devices():
 
             for device in data:
                 device_name = device.get('systemName') or device.get('dnsName')
-                org_id = device.get('organizationId')
+                device_org_id = device.get('organizationId')
                 if device_name:
                     devices.append({
                         'id': device.get('id'),
                         'name': fix_encoding(device_name),
-                        'organizationId': org_id,
+                        'organizationId': device_org_id,
                     })
 
             if len(data) < page_size:

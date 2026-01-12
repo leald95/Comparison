@@ -2584,10 +2584,12 @@
             pendingCacheChoice: null,
             testingViewSort: { field: 'name', direction: 'asc' },
             clientName: null,
+            currentNinjaOrgId: null,  // Track current org_id for device picker filtering
             lastHistorySave: null,  // Track last save timestamp to prevent duplicates
             remediationScriptId: null,  // Selected remediation script
             availableScripts: [],  // Available NinjaRMM scripts
             ninjaDevices: [],  // Store NinjaRMM devices with IDs for remediation
+            allNinjaDevices: [],  // All devices (for AD picker)
             offlineDaysThreshold: 30  // Default offline threshold in days
         };
 
@@ -5351,6 +5353,7 @@
 
             // Store client name in state for history
             state.clientName = clientName;
+            state.currentNinjaOrgId = ninjaId;  // Track current org for device picker filtering
 
             // Show fetching status
             document.getElementById('status-fetching').style.display = 'flex';
@@ -5525,25 +5528,35 @@
             select.innerHTML = '<option value="">Loading devices...</option>';
             if (statusDiv) statusDiv.textContent = '';
 
+            // If a client is selected, filter by org_id
+            const orgId = state.currentNinjaOrgId;
+            const url = orgId ? `/ninjarmm/devices/all?org_id=${orgId}` : '/ninjarmm/devices/all';
+
             try {
-                const response = await fetch('/ninjarmm/devices/all');
+                const response = await fetch(url);
                 const data = await response.json();
 
                 if (data.success) {
                     state.allNinjaDevices = data.devices || [];
-                    select.innerHTML = '<option value="">-- Select a device (DC recommended) --</option>';
+                    
+                    if (data.devices && data.devices.length > 0) {
+                        select.innerHTML = '<option value="">-- Select a device (DC recommended) --</option>';
 
-                    data.devices.forEach(device => {
-                        const option = document.createElement('option');
-                        option.value = device.id;
-                        option.textContent = device.name;
-                        select.appendChild(option);
-                    });
+                        data.devices.forEach(device => {
+                            const option = document.createElement('option');
+                            option.value = device.id;
+                            option.textContent = device.name;
+                            select.appendChild(option);
+                        });
 
-                    // Restore saved selection
-                    if (state.ad.deviceId) {
-                        select.value = state.ad.deviceId;
-                        validateAdConfig();
+                        // Restore saved selection
+                        if (state.ad.deviceId) {
+                            select.value = state.ad.deviceId;
+                            validateAdConfig();
+                        }
+                    } else {
+                        select.innerHTML = '<option value="">No devices found for this client</option>';
+                        if (statusDiv) statusDiv.textContent = orgId ? 'No devices in this organization' : 'No devices available';
                     }
                 } else {
                     select.innerHTML = '<option value="">Error loading devices</option>';
