@@ -9,6 +9,7 @@ import time
 import logging
 import requests
 import base64
+import secrets
 from flask import Flask, render_template, request, jsonify, session, Response
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
@@ -1382,6 +1383,24 @@ def ad_intake():
     logger.info('Received AD inventory: client=%s days=%s count=%s from=%s', client, days, len(names), request.remote_addr)
 
     return jsonify({'success': True, 'client': client, 'days': days, 'count': len(names)})
+
+
+@app.route('/ad/tokens/generate', methods=['POST'])
+def ad_generate_intake_token():
+    """Generate a new AD intake token for rotation.
+
+    Note: this does not persist changes to environment variables; it returns a suggested token
+    that you should set as AD_INTAKE_TOKEN_CURRENT (and move the previous current to PREVIOUS).
+    """
+    if os.getenv('ENABLE_BASIC_AUTH', '0') not in ('1', 'true', 'True'):
+        return jsonify({'error': 'Not available unless Basic Auth is enabled'}), 403
+
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
+    token = secrets.token_hex(32)
+    return jsonify({'success': True, 'token': token})
 
 
 @app.route('/ad/status', methods=['GET'])

@@ -7,8 +7,8 @@ A Flask-based web application designed for MSP (Managed Service Provider) teams 
 **Last Updated:** 2026-01-12
 
 **Line Counts:**
-- `app.py`: 1,261 lines
-- `templates/index.html`: 5,112 lines
+- `app.py`: 1,532 lines
+- `templates/index.html`: 5,790 lines
 
 ---
 
@@ -48,6 +48,7 @@ A Flask-based web application designed for MSP (Managed Service Provider) teams 
 │  │  - /ninjarmm/*           (Ninja API proxy)            │  │
 │  │  - /compare              (Column comparison logic)    │  │
 │  │  - /upload               (Virtual file creation)      │  │
+│  │  - /ad/*                 (AD inventory via Ninja)     │  │
 │  │  - /cleanup              (Session file cleanup)       │  │
 │  └───────────────────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────────────────┐  │
@@ -185,7 +186,7 @@ Options:
 ### **File Structure**
 ```
 templates/
-└── index.html (5,112 lines)
+└── index.html (5,790 lines)
     ├── <head> (lines 4-1860)
     │   ├── CSS Variables (theming)
     │   ├── Layout Styles
@@ -401,7 +402,7 @@ const state = {
 
 ### **Flask Application Structure**
 ```python
-app.py (1,261 lines)
+app.py (1,532 lines)
 ├── Configuration
 │   ├── Flask app setup
 │   ├── Environment variables (.env)
@@ -413,27 +414,33 @@ app.py (1,261 lines)
 │   ├── read_excel_file()      # Excel reader with fallback (line 102)
 │   └── allowed_file()         # File extension validation (line 98)
 ├── Routes - Main
-│   ├── GET  /                 # Serve index.html (line 117)
-│   └── POST /cleanup          # Delete session files (line 1238)
+│   ├── GET  /                 # Serve index.html
+│   └── POST /cleanup          # Delete session files
 ├── Routes - File Upload (Legacy, unused in UI)
-│   ├── POST /upload           # Upload Excel file (line 123)
-│   ├── POST /get_columns      # Get sheet columns (line 171)
-│   └── POST /preview_column   # Preview column data (line 196)
+│   ├── POST /upload           # Upload Excel file
+│   ├── POST /get_columns      # Get sheet columns
+│   └── POST /preview_column   # Preview column data
 ├── Routes - Comparison
-│   └── POST /compare          # Compare two columns (line 237)
+│   └── POST /compare          # Compare two columns (supports selecting file IDs)
 ├── Routes - SentinelOne API
-│   ├── GET  /sentinelone/sites      # List sites (line 356)
-│   ├── GET  /sentinelone/endpoints  # List agents (line 407)
-│   └── POST /sentinelone/upload     # Create virtual file (line 490)
+│   ├── GET  /sentinelone/sites
+│   ├── GET  /sentinelone/endpoints
+│   └── POST /sentinelone/upload
 ├── Routes - NinjaRMM API
-│   ├── GET  /ninjarmm/test          # Test auth methods (line 533)
-│   ├── GET  /ninjarmm/organizations # List orgs (line 618)
-│   ├── GET  /ninjarmm/devices       # List devices (line 719)
-│   ├── GET  /ninjarmm/scripts       # List available scripts (line 1022)
-│   ├── POST /ninjarmm/run-script    # Execute script on device (line 1135)
-│   └── POST /ninjarmm/upload        # Create virtual file (line 839)
+│   ├── GET  /ninjarmm/test
+│   ├── GET  /ninjarmm/organizations
+│   ├── GET  /ninjarmm/devices
+│   ├── GET  /ninjarmm/scripts
+│   ├── POST /ninjarmm/run-script
+│   └── POST /ninjarmm/upload
+├── Routes - Active Directory (via Ninja)
+│   ├── POST /ad/trigger           # Trigger Ninja AD inventory script
+│   ├── POST /ad/intake            # Receive AD results (token auth)
+│   ├── GET  /ad/status            # Poll for snapshot availability
+│   ├── POST /ad/attach            # Attach AD snapshot into session (file_id=3)
+│   └── POST /ad/tokens/generate   # Generate new intake token (requires Basic Auth)
 └── Routes - Unified
-    └── GET  /clients/unified        # Match clients across APIs (line 882)
+    └── GET  /clients/unified
 ```
 
 ### **Key Backend Functions**
@@ -503,7 +510,8 @@ def upload_sentinelone_data():
 # Session stores file paths for comparison
 session['files'] = {
     '1': '/uploads/uuid1_sentinelone_endpoints.xlsx',
-    '2': '/uploads/uuid2_ninjarmm_devices.xlsx'
+    '2': '/uploads/uuid2_ninjarmm_devices.xlsx',
+    '3': '/uploads/uuid3_active_directory.xlsx'
 }
 
 # Cleanup on page unload
@@ -784,6 +792,12 @@ Authorization: Basic {base64(api_key:api_secret)}
 
 ## Recent Changes
 
+### **2026-01-12 - Security + AD Integration**
+- ✅ Optional Basic Auth + cookie/security headers hardening
+- ✅ Self-hosted runner workflow hardened (no PR trigger)
+- ✅ NinjaRMM run-script endpoint hardened (allowlist + online check)
+- ✅ Active Directory inventory via Ninja script + /ad/* endpoints + AD as a third comparison source
+
 ### **Version 2.0 - Unified Client Selection (2026-01-09)**
 
 #### **Removed:**
@@ -832,7 +846,7 @@ Authorization: Basic {base64(api_key:api_secret)}
 
 ```
 Comparison/
-├── app.py                    # Flask backend (1,261 lines)
+├── app.py                    # Flask backend (1,532 lines)
 ├── requirements.txt          # Python dependencies
 ├── README.md                 # User documentation
 ├── ARCHITECTURE.md           # This file
@@ -840,7 +854,7 @@ Comparison/
 ├── .env.example              # Environment template
 ├── .gitignore                # Git exclusions
 ├── templates/
-│   ├── index.html            # Single-page app (5,112 lines)
+│   ├── index.html            # Single-page app (5,790 lines)
 │   └── index.html.backup     # Backup copy
 ├── uploads/                  # Temporary file storage (auto-created)
 │   └── *.xlsx                # Session-based virtual files

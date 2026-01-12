@@ -2506,6 +2506,11 @@
                         </select>
                     </div>
 
+                    <div class="settings-select-wrapper" style="margin-top: 0.75rem; display:flex; gap:0.5rem;">
+                        <button type="button" class="history-btn" id="ad-generate-token-btn">Generate intake token</button>
+                        <input id="ad-generated-token" class="settings-select" type="text" readonly placeholder="Token will appear here (copy to .env)" />
+                    </div>
+
                     <div class="settings-warning">
                         ⚠️ <strong>Note:</strong> The selected device must have AD query capability (e.g., DC with RSAT/AD module). The webapp will trigger the script and wait for it to POST results back.
                     </div>
@@ -5661,6 +5666,27 @@
             applySource(state.file2, state.primarySources.file2);
             comparePrimaryBtn.style.display = 'none';
             await runComparison();
+        });
+
+        // Generate a new AD intake token (copy into server .env)
+        const adGenBtn = document.getElementById('ad-generate-token-btn');
+        if (adGenBtn) adGenBtn.addEventListener('click', async () => {
+            try {
+                const resp = await fetch('/ad/tokens/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csrf_token: csrfToken }) });
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error || 'Token generation failed');
+
+                const out = document.getElementById('ad-generated-token');
+                if (out) {
+                    out.value = data.token;
+                    out.focus();
+                    out.select();
+                }
+
+                showToast('Token generated. Copy it into .env and restart the server.', 'success');
+            } catch (err) {
+                showToast(err.message || 'Token generation failed', 'error');
+            }
         });
 
         function updateScriptInfo(scriptId) {
