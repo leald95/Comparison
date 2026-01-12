@@ -1449,9 +1449,10 @@ def trigger_ad_inventory():
                     if last_resp.status_code in (200, 204):
                         return jsonify({'success': True, 'message': 'AD inventory triggered'})
 
-                    # Retry only on 500s (server-side error); for other codes, surface immediately.
-                    if last_resp.status_code != 500:
-                        return jsonify({'error': f'NinjaRMM API error ({last_variant}): {last_resp.status_code} {last_resp.text[:200]}'}), last_resp.status_code
+                    # Retry only on server-side errors and "not found" (endpoint/resource may differ per tenant).
+                    retryable = {500, 404}
+                    if last_resp.status_code not in retryable:
+                        return jsonify({'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}'}), last_resp.status_code
 
         return jsonify({'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}'}), last_resp.status_code
 
