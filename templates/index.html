@@ -4859,12 +4859,14 @@
                 // Fetch from available sources
                 if (s1Id) {
                     s1Data = await fetchFromS1(s1Id, s1Name);
-                    document.getElementById('s1-count').textContent = `${s1Data.endpoints.length} endpoints`;
+                    const s1Total = (typeof s1Data.count === 'number') ? s1Data.count : (s1Data.endpoints ? s1Data.endpoints.length : 0);
+                    document.getElementById('s1-count').textContent = `${s1Total} endpoints`;
                 }
 
                 if (ninjaId) {
                     ninjaData = await fetchFromNinja(ninjaId, ninjaName);
-                    document.getElementById('ninja-count').textContent = `${ninjaData.devices.length} devices`;
+                    const ninjaTotal = (typeof ninjaData.count === 'number') ? ninjaData.count : (ninjaData.devices ? ninjaData.devices.length : 0);
+                    document.getElementById('ninja-count').textContent = `${ninjaTotal} devices`;
                 }
 
                 // Show summary
