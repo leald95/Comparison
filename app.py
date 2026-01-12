@@ -1218,8 +1218,10 @@ def run_ninjarmm_script():
         headers = {**headers, 'Content-Type': 'application/json'}
         
         # Prepare script execution payload
+        # Ninja expects fields like: id/type/uid/runAs/parameters (not scriptId)
         payload = {
-            'scriptId': script_id,
+            'id': script_id,
+            'type': 'script',
             'parameters': script_params
         }
         
@@ -1325,7 +1327,8 @@ def trigger_ad_inventory():
         headers = {**headers, 'Content-Type': 'application/json'}
 
         payload = {
-            'scriptId': script_id,
+            'id': script_id,
+            'type': 'script',
             'parameters': script_params
         }
 
