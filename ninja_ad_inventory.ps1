@@ -10,7 +10,9 @@ Expected parameters (as sent by the webapp):
 - Days (30/60/90)
 - ClientName (string label)
 - CallbackUrl (e.g. https://yourapp/ad/intake)
-- Token (shared secret; sent as X-AD-Intake-Token)
+- Nonce (one-time nonce)
+- SigningKey (one-time signing key; used to compute X-AD-Intake-Signature)
+- Token (legacy optional; sent as X-AD-Intake-Token)
 
 Notes:
 - Must run on a domain-joined host with RSAT AD module available (or a DC).
@@ -29,6 +31,12 @@ param(
   [string]$CallbackUrl,
 
   [Parameter(Mandatory=$true)]
+  [string]$Nonce,
+
+  [Parameter(Mandatory=$true)]
+  [string]$SigningKey,
+
+  [Parameter(Mandatory=$false)]
   [string]$Token
 )
 
@@ -42,7 +50,8 @@ function Fail([string]$Message) {
 if ($Days -notin @(30,60,90)) { Fail "Days must be one of: 30, 60, 90" }
 if ([string]::IsNullOrWhiteSpace($ClientName)) { Fail "ClientName is required" }
 if ([string]::IsNullOrWhiteSpace($CallbackUrl)) { Fail "CallbackUrl is required" }
-if ([string]::IsNullOrWhiteSpace($Token)) { Fail "Token is required" }
+if ([string]::IsNullOrWhiteSpace($Nonce)) { Fail "Nonce is required" }
+if ([string]::IsNullOrWhiteSpace($SigningKey)) { Fail "SigningKey is required" }
 
 try {
   # Ensure URL is sane
@@ -119,7 +128,19 @@ $payload = [pscustomobject]@{
 
 $json = $payload | ConvertTo-Json -Depth 6
 
-$headers = @{ 'X-AD-Intake-Token' = $Token }
+$hmac = New-Object System.Security.Cryptography.HMACSHA256 ([Text.Encoding]::UTF8.GetBytes($SigningKey))
+$sigBytes = $hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($json))
+$signature = ($sigBytes | ForEach-Object { $_.ToString('x2') }) -join ''
+
+$headers = @{ 
+  'X-AD-Intake-Nonce' = $Nonce
+  'X-AD-Intake-Signature' = $signature
+}
+
+# Legacy optional header
+if (-not [string]::IsNullOrWhiteSpace($Token)) {
+  $headers['X-AD-Intake-Token'] = $Token
+}
 
 try {
   # If your environment has strict TLS defaults, uncomment the next line:

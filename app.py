@@ -10,6 +10,8 @@ import logging
 import requests
 import base64
 import secrets
+import hmac
+import hashlib
 from flask import Flask, render_template, request, jsonify, session, Response
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
@@ -33,8 +35,8 @@ _NINJA_TOKEN_CACHE = {
 # Key: (client_name, days) -> {path, count, received_at}
 _AD_CACHE = {}
 
-# One-time tokens for AD intake (minted per /ad/trigger).
-# Key: token -> {client, days, expires_at}
+# One-time nonces for AD intake (minted per /ad/trigger).
+# Key: nonce -> {client, days, signing_key, expires_at}
 _AD_INTAKE_NONCES = {}
 _AD_INTAKE_NONCE_TTL_SECONDS = 15 * 60
 
@@ -1286,11 +1288,14 @@ def trigger_ad_inventory():
     if days not in (30, 60, 90):
         return jsonify({'error': 'days must be one of: 30, 60, 90'}), 400
 
-    # Mint a one-time token for this specific AD request; the Ninja script will POST it back.
-    token = secrets.token_urlsafe(32)
-    _AD_INTAKE_NONCES[token] = {
+    # Mint a one-time nonce + signing key for this AD request.
+    # The signing key is passed to the script runner but is NOT sent back on the callback.
+    nonce = secrets.token_urlsafe(32)
+    signing_key = secrets.token_urlsafe(32)
+    _AD_INTAKE_NONCES[nonce] = {
         'client': client,
         'days': days,
+        'signing_key': signing_key,
         'expires_at': time.time() + _AD_INTAKE_NONCE_TTL_SECONDS,
     }
 
@@ -1309,7 +1314,8 @@ def trigger_ad_inventory():
         'Days': days,
         'ClientName': client,
         'CallbackUrl': callback_url,
-        'Token': token,
+        'Nonce': nonce,
+        'SigningKey': signing_key,
     }
 
     logger.info('Triggering AD inventory via Ninja: client=%s days=%s device_id=%s script_id=%s', client, days, device_id, script_id)
@@ -1344,10 +1350,14 @@ def ad_intake():
     """Receive AD computer inventory from a Ninja-run script."""
     _prune_ad_intake_nonces()
 
-    provided = request.headers.get('X-AD-Intake-Token')
-    if not provided:
-        return jsonify({'error': 'Unauthorized'}), 401
+    # Preferred: HMAC-signed intake using a one-time nonce.
+    intake_nonce = request.headers.get('X-AD-Intake-Nonce')
+    intake_sig = request.headers.get('X-AD-Intake-Signature')
 
+    # Legacy: bearer token (static env token).
+    provided = request.headers.get('X-AD-Intake-Token')
+
+    raw_body = request.get_data(cache=True) or b''
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict):
         return jsonify({'error': 'Invalid JSON body'}), 400
@@ -1367,16 +1377,25 @@ def ad_intake():
     if days not in (30, 60, 90):
         return jsonify({'error': 'days must be one of: 30, 60, 90'}), 400
 
-    # Authorize via either a static token (manual/legacy use) or a one-time token minted per /ad/trigger.
-    current = os.getenv('AD_INTAKE_TOKEN_CURRENT')
-    previous = os.getenv('AD_INTAKE_TOKEN_PREVIOUS')
-    if provided in {t for t in (current, previous) if t}:
-        pass
-    else:
-        nonce = _AD_INTAKE_NONCES.get(provided)
-        if not nonce or nonce.get('client') != client or int(nonce.get('days') or 0) != days or nonce.get('expires_at', 0) <= time.time():
+    # Auth: if HMAC headers are present, validate signature using the per-request signing key.
+    if intake_nonce and intake_sig:
+        entry = _AD_INTAKE_NONCES.get(intake_nonce)
+        if not entry or entry.get('client') != client or int(entry.get('days') or 0) != days or entry.get('expires_at', 0) <= time.time():
             return jsonify({'error': 'Unauthorized'}), 401
-        _AD_INTAKE_NONCES.pop(provided, None)
+
+        signing_key = entry.get('signing_key') or ''
+        expected = hmac.new(signing_key.encode('utf-8'), raw_body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, str(intake_sig).strip()):
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        _AD_INTAKE_NONCES.pop(intake_nonce, None)
+
+    else:
+        # Legacy bearer token (manual/legacy use)
+        current = os.getenv('AD_INTAKE_TOKEN_CURRENT')
+        previous = os.getenv('AD_INTAKE_TOKEN_PREVIOUS')
+        if not provided or provided not in {t for t in (current, previous) if t}:
+            return jsonify({'error': 'Unauthorized'}), 401
 
     if not isinstance(items, list):
         return jsonify({'error': 'workstations must be a list'}), 400
