@@ -77,6 +77,11 @@ if ($hasAnyWebhookParam) {
   if ([string]::IsNullOrWhiteSpace($SigningKey)) { Fail "SigningKey is required when using webhook parameters" }
 }
 
+# Ensure at least one output mode is specified
+if ([string]::IsNullOrWhiteSpace($CustomField) -and -not $hasAnyWebhookParam) {
+  Fail "Either CustomField or webhook parameters (ClientName, CallbackUrl, Nonce, SigningKey) must be provided"
+}
+
 # Validate CallbackUrl if provided
 if (-not [string]::IsNullOrWhiteSpace($CallbackUrl)) {
   try {
@@ -165,8 +170,8 @@ if (-not [string]::IsNullOrWhiteSpace($CustomField)) {
   }
 }
 
-# If CallbackUrl, SigningKey, and Nonce are provided, POST to the webhook
-if (-not [string]::IsNullOrWhiteSpace($CallbackUrl) -and -not [string]::IsNullOrWhiteSpace($SigningKey) -and -not [string]::IsNullOrWhiteSpace($Nonce)) {
+# If all webhook parameters are provided, POST to the webhook
+if (-not [string]::IsNullOrWhiteSpace($ClientName) -and -not [string]::IsNullOrWhiteSpace($CallbackUrl) -and -not [string]::IsNullOrWhiteSpace($SigningKey) -and -not [string]::IsNullOrWhiteSpace($Nonce)) {
   $hmac = New-Object System.Security.Cryptography.HMACSHA256 ([Text.Encoding]::UTF8.GetBytes($SigningKey))
   $sigBytes = $hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($json))
   $signature = ($sigBytes | ForEach-Object { $_.ToString('x2') }) -join ''
