@@ -75,6 +75,11 @@ A modern web application to compare endpoints between SentinelOne (EDR) and Ninj
 
    (Make sure the server firewall allows inbound TCP/5000.)
 
+   **Recommended for LAN:** enable Basic Auth via `.env`:
+   - `ENABLE_BASIC_AUTH=1`
+   - `BASIC_AUTH_USERNAME=...`
+   - `BASIC_AUTH_PASSWORD=...`
+
 3. **Configure Remediation (Optional)**:
    - Click the ⚙️ **Settings** button in the header
    - Select a NinjaRMM script for SentinelOne installation/repair

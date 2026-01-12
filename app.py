@@ -9,7 +9,7 @@ import time
 import logging
 import requests
 import base64
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, Response
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import pandas as pd
@@ -102,8 +102,28 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY') or os.urandom(24)
 
 
+def _require_basic_auth():
+    if os.getenv('ENABLE_BASIC_AUTH', '0') not in ('1', 'true', 'True'):
+        return None
+
+    username = os.getenv('BASIC_AUTH_USERNAME')
+    password = os.getenv('BASIC_AUTH_PASSWORD')
+    if not username or not password:
+        return jsonify({'error': 'Server auth not configured'}), 500
+
+    auth = request.authorization
+    if not auth or auth.username != username or auth.password != password:
+        return Response('Authentication required', 401, {'WWW-Authenticate': 'Basic realm="Comparison"'})
+
+    return None
+
+
 @app.before_request
 def _normalize_session_files_keys():
+    auth_err = _require_basic_auth()
+    if auth_err:
+        return auth_err
+
     files = session.get('files')
     if isinstance(files, dict):
         session['files'] = {str(k): v for k, v in files.items()}
