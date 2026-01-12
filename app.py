@@ -1488,8 +1488,10 @@ def trigger_ad_inventory():
                     payload['runAs'] = run_as
 
                 logger.info('Trying Ninja script-run: endpoint=%s variant=%s payload=%s', last_endpoint, last_variant, payload)
+                logger.info('Request headers: %s', {k: v for k, v in headers.items() if k.lower() not in ['authorization']})
                 try:
                     last_resp = requests.post(endpoint, json=payload, headers=headers, auth=auth, timeout=30)
+                    logger.info('Response headers: %s', dict(last_resp.headers))
                     logger.info('Ninja script-run response: variant=%s status=%s body=%s', last_variant, last_resp.status_code, last_resp.text[:300])
                 except requests.exceptions.RequestException as e:
                     logger.warning('Ninja script-run request failed: variant=%s endpoint=%s error=%s', last_variant, last_endpoint, str(e))
@@ -1542,17 +1544,43 @@ def ad_debug():
         'device_id': device_id,
         'script_id': script_id,
         'device_valid': False,
-        'device_info': None,
-        'device_error': None,
         'script_valid': False,
+        'device_info': None,
         'script_info': None,
+        'device_error': None,
         'script_error': None,
+        'oauth_token_info': None,
+        'ready': False
     }
 
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
 
     try:
         headers, auth = _get_ninja_auth(api_url)
+        
+        # Decode OAuth token to check permissions (if using OAuth)
+        if hasattr(auth, 'token') and auth.token:
+            import base64
+            try:
+                # JWT tokens have 3 parts separated by dots: header.payload.signature
+                token_parts = auth.token.split('.')
+                if len(token_parts) >= 2:
+                    # Decode the payload (second part)
+                    # Add padding if needed
+                    payload = token_parts[1]
+                    padding = 4 - len(payload) % 4
+                    if padding != 4:
+                        payload += '=' * padding
+                    decoded = base64.urlsafe_b64decode(payload)
+                    token_claims = json.loads(decoded)
+                    result['oauth_token_info'] = {
+                        'scopes': token_claims.get('scope', '').split() if token_claims.get('scope') else [],
+                        'expires_at': token_claims.get('exp'),
+                        'subject': token_claims.get('sub'),
+                        'audience': token_claims.get('aud'),
+                    }
+            except Exception as e:
+                result['oauth_token_info'] = {'error': f'Failed to decode token: {str(e)}'}
     except Exception as e:
         return jsonify({'error': f'Auth failed: {e}', **result}), 400
 
