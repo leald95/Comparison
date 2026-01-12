@@ -20,7 +20,7 @@ NinjaOne-only mode parameters:
 Notes:
 - Must run on a domain-joined host with RSAT AD module available (or a DC).
 - Uses lastLogonTimestamp which can lag; best used for 30/60/90-day windows.
-- When CustomField is provided, the script operates in NinjaOne-only mode.
+- The script supports multiple modes: webhook-only, CustomField-only, or both simultaneously.
 #>
 
 [CmdletBinding()]
@@ -135,7 +135,7 @@ foreach ($c in $computers) {
 }
 
 $payload = [pscustomobject]@{
-  client = $ClientName
+  client = if ([string]::IsNullOrWhiteSpace($ClientName)) { $null } else { $ClientName }
   days = $Days
   workstations = $results
 }
@@ -152,8 +152,8 @@ if (-not [string]::IsNullOrWhiteSpace($CustomField)) {
   }
 }
 
-# If CallbackUrl and SigningKey are provided, POST to the webhook
-if (-not [string]::IsNullOrWhiteSpace($CallbackUrl) -and -not [string]::IsNullOrWhiteSpace($SigningKey)) {
+# If CallbackUrl, SigningKey, and Nonce are provided, POST to the webhook
+if (-not [string]::IsNullOrWhiteSpace($CallbackUrl) -and -not [string]::IsNullOrWhiteSpace($SigningKey) -and -not [string]::IsNullOrWhiteSpace($Nonce)) {
   $hmac = New-Object System.Security.Cryptography.HMACSHA256 ([Text.Encoding]::UTF8.GetBytes($SigningKey))
   $sigBytes = $hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($json))
   $signature = ($sigBytes | ForEach-Object { $_.ToString('x2') }) -join ''
