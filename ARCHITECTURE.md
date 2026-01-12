@@ -4,11 +4,11 @@
 A Flask-based web application designed for MSP (Managed Service Provider) teams to compare endpoint/device lists between SentinelOne (EDR platform) and NinjaRMM (RMM platform) to identify discrepancies and offline devices.
 
 **Version:** 2.0 (Unified Client Selection)  
-**Last Updated:** 2026-01-09
+**Last Updated:** 2026-01-12
 
 **Line Counts:**
-- `app.py`: 1,045 lines
-- `templates/index.html`: 4,717 lines
+- `app.py`: 1,261 lines
+- `templates/index.html`: 5,112 lines
 
 ---
 
@@ -48,6 +48,7 @@ A Flask-based web application designed for MSP (Managed Service Provider) teams 
 │  │  - /ninjarmm/*           (Ninja API proxy)            │  │
 │  │  - /compare              (Column comparison logic)    │  │
 │  │  - /upload               (Virtual file creation)      │  │
+│  │  - /cleanup              (Session file cleanup)       │  │
 │  └───────────────────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │  Data Processing:                                      │  │
@@ -179,16 +180,18 @@ Options:
 
 ## Frontend Architecture
 
+*Note: Frontend line numbers are approximate and may drift as the UI evolves.*
+
 ### **File Structure**
 ```
 templates/
-└── index.html (4,717 lines)
+└── index.html (5,112 lines)
     ├── <head> (lines 4-1860)
     │   ├── CSS Variables (theming)
     │   ├── Layout Styles
     │   ├── Component Styles
     │   └── Animation Definitions
-    ├── <body> (lines 1862-4716)
+    ├── <body> (lines 1862-5111)
     │   ├── Background Effects (lines 1863-1864)
     │   ├── Header (lines 1867-1881)
     │   │   └── Title, quick-load btn, history btn
@@ -201,7 +204,7 @@ templates/
     │       ├── Organization Modal (Ninja)
     │       ├── Unified Client Modal
     │       └── History Modal
-    └── <script> (lines 2132-4716)
+    └── <script> (lines 2132-5111)
         ├── State Management (line 2134)
         ├── LocalStorage Functions (lines 2143-2250)
         │   ├── saveLastSourceConfig()
@@ -398,7 +401,7 @@ const state = {
 
 ### **Flask Application Structure**
 ```python
-app.py (1,045 lines)
+app.py (1,261 lines)
 ├── Configuration
 │   ├── Flask app setup
 │   ├── Environment variables (.env)
@@ -411,7 +414,7 @@ app.py (1,045 lines)
 │   └── allowed_file()         # File extension validation (line 98)
 ├── Routes - Main
 │   ├── GET  /                 # Serve index.html (line 117)
-│   └── POST /cleanup          # Delete session files (line 1022)
+│   └── POST /cleanup          # Delete session files (line 1238)
 ├── Routes - File Upload (Legacy, unused in UI)
 │   ├── POST /upload           # Upload Excel file (line 123)
 │   ├── POST /get_columns      # Get sheet columns (line 171)
@@ -426,11 +429,11 @@ app.py (1,045 lines)
 │   ├── GET  /ninjarmm/test          # Test auth methods (line 533)
 │   ├── GET  /ninjarmm/organizations # List orgs (line 618)
 │   ├── GET  /ninjarmm/devices       # List devices (line 719)
-│   ├── GET  /ninjarmm/scripts       # List available scripts (NEW)
-│   ├── POST /ninjarmm/run-script    # Execute script on device (NEW)
-│   └── POST /ninjarmm/upload        # Create virtual file (line 838)
+│   ├── GET  /ninjarmm/scripts       # List available scripts (line 1022)
+│   ├── POST /ninjarmm/run-script    # Execute script on device (line 1135)
+│   └── POST /ninjarmm/upload        # Create virtual file (line 839)
 └── Routes - Unified
-    └── GET  /clients/unified        # Match clients across APIs (line 881)
+    └── GET  /clients/unified        # Match clients across APIs (line 882)
 ```
 
 ### **Key Backend Functions**
@@ -829,7 +832,7 @@ Authorization: Basic {base64(api_key:api_secret)}
 
 ```
 Comparison/
-├── app.py                    # Flask backend (1,045 lines)
+├── app.py                    # Flask backend (1,261 lines)
 ├── requirements.txt          # Python dependencies
 ├── README.md                 # User documentation
 ├── ARCHITECTURE.md           # This file
@@ -837,7 +840,7 @@ Comparison/
 ├── .env.example              # Environment template
 ├── .gitignore                # Git exclusions
 ├── templates/
-│   ├── index.html            # Single-page app (4,717 lines)
+│   ├── index.html            # Single-page app (5,112 lines)
 │   └── index.html.backup     # Backup copy
 ├── uploads/                  # Temporary file storage (auto-created)
 │   └── *.xlsx                # Session-based virtual files
@@ -999,7 +1002,7 @@ http://localhost:5000
 ## Contact and Contributors
 
 **Primary Developer:** MSP Engineering Team  
-**Last Updated:** 2026-01-09  
+**Last Updated:** 2026-01-12  
 **Version:** 2.0 (Unified Client Selection)
 
 For questions or issues, consult this documentation first, then reach out to the development team.

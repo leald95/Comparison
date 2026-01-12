@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <title>Endpoint Comparison Tool - SentinelOne vs NinjaRMM</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2316,6 +2317,22 @@
     </div>
 
     <script>
+        // CSRF: automatically attach token to all same-origin POST requests
+        const csrfTokenMeta = document.querySelector('meta[name="csrf-token"]');
+        const csrfToken = csrfTokenMeta ? csrfTokenMeta.getAttribute('content') : null;
+        const _origFetch = window.fetch.bind(window);
+        window.fetch = (url, options = {}) => {
+            const method = (options.method || 'GET').toUpperCase();
+
+            const targetUrl = (typeof url === 'string') ? url : (url && url.url ? url.url : '');
+            const isSameOrigin = targetUrl.startsWith('/') || targetUrl.startsWith(window.location.origin);
+
+            if (csrfToken && isSameOrigin && method === 'POST') {
+                options.headers = { ...(options.headers || {}), 'X-CSRF-Token': csrfToken };
+            }
+            return _origFetch(url, options);
+        };
+
         // State
         const state = {
             file1: { uploaded: false, sheet: null, column: null, filename: null, sourceType: null, offlineDevices: [] },

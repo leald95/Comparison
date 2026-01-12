@@ -5,6 +5,8 @@ Compares selected columns between two Excel files and displays differences.
 
 import os
 import re
+import time
+import logging
 import requests
 import base64
 from flask import Flask, render_template, request, jsonify, session
@@ -15,6 +17,16 @@ import uuid
 
 # Load environment variables
 load_dotenv()
+
+logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO').upper())
+logger = logging.getLogger(__name__)
+
+# Simple in-process cache for Ninja OAuth tokens
+_NINJA_TOKEN_CACHE = {
+    'access_token': None,
+    'expires_at': 0,
+    'api_url': None,
+}
 
 
 def fix_encoding(value):
@@ -85,7 +97,10 @@ def normalize_value(value):
     return normalized
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+
+# Use a stable secret key if provided; falls back to a random key for local dev.
+app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY') or os.urandom(24)
+
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max
 
@@ -97,6 +112,66 @@ ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _require_csrf():
+    if request.method != 'POST':
+        return None
+    token = request.headers.get('X-CSRF-Token')
+    if not token or token != session.get('csrf_token'):
+        return jsonify({'error': 'CSRF token missing or invalid'}), 403
+    return None
+
+
+def _get_ninja_auth(api_url):
+    """Return (headers, auth) for NinjaRMM calls; caches OAuth token when used."""
+    client_id = os.getenv('NINJARMM_CLIENT_ID')
+    client_secret = os.getenv('NINJARMM_CLIENT_SECRET')
+    api_key = os.getenv('NINJARMM_API_KEY')
+    api_secret = os.getenv('NINJARMM_API_SECRET')
+
+    if (client_id and client_secret):
+        now = time.time()
+        if (
+            _NINJA_TOKEN_CACHE.get('access_token')
+            and _NINJA_TOKEN_CACHE.get('api_url') == api_url
+            and _NINJA_TOKEN_CACHE.get('expires_at', 0) > (now + 30)
+        ):
+            return ({'Accept': 'application/json', 'Authorization': f"Bearer {_NINJA_TOKEN_CACHE['access_token']}"}, None)
+
+        token_response = requests.post(
+            f'{api_url}/oauth/token',
+            data={
+                'grant_type': 'client_credentials',
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'scope': 'monitoring'
+            },
+            headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            timeout=30
+        )
+
+        if token_response.status_code != 200:
+            raise ValueError(f"NinjaRMM OAuth error: {token_response.status_code}")
+
+        token_json = token_response.json()
+        access_token = token_json.get('access_token')
+        expires_in = int(token_json.get('expires_in') or 3600)
+        if not access_token:
+            raise ValueError('NinjaRMM OAuth error: missing access_token')
+
+        _NINJA_TOKEN_CACHE.update({
+            'access_token': access_token,
+            'expires_at': now + expires_in,
+            'api_url': api_url,
+        })
+
+        return ({'Accept': 'application/json', 'Authorization': f'Bearer {access_token}'}, None)
+
+    if (api_key and api_secret):
+        return ({'Accept': 'application/json'}, (api_key, api_secret))
+
+    raise ValueError('NinjaRMM API credentials not configured.')
 
 
 def read_excel_file(filepath):
@@ -117,12 +192,17 @@ def read_excel_file(filepath):
 @app.route('/')
 def index():
     """Render the main page."""
-    return render_template('index.html')
+    session.setdefault('csrf_token', uuid.uuid4().hex)
+    return render_template('index.html', csrf_token=session['csrf_token'])
 
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
     """Handle file upload and return column information."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
     
@@ -171,6 +251,10 @@ def upload_file():
 @app.route('/get_columns', methods=['POST'])
 def get_columns():
     """Get columns for a specific sheet."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
     data = request.json
     file_id = data.get('file_id')
     sheet_name = data.get('sheet_name')
@@ -196,6 +280,10 @@ def get_columns():
 @app.route('/preview_column', methods=['POST'])
 def preview_column():
     """Get preview data for a specific column."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
     data = request.json
     file_id = data.get('file_id')
     sheet_name = data.get('sheet_name')
@@ -237,6 +325,10 @@ def preview_column():
 @app.route('/compare', methods=['POST'])
 def compare_columns():
     """Compare selected columns from both files using set-based comparison."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
     data = request.json
     
     file1_sheet = data.get('file1_sheet')
@@ -378,8 +470,9 @@ def get_sentinelone_sites():
         )
         
         if response.status_code != 200:
+            logger.warning("SentinelOne sites error status=%s", response.status_code)
             return jsonify({
-                'error': f'SentinelOne API error: {response.status_code} - {response.text}'
+                'error': f'SentinelOne API error: {response.status_code}'
             }), response.status_code
         
         data = response.json()
@@ -413,7 +506,7 @@ def get_sentinelone_endpoints():
     if site_id in [None, '', 'all', 'null', 'undefined']:
         site_id = None
     
-    print(f"DEBUG: SentinelOne Endpoints request. site_id: {site_id}")
+    logger.debug("SentinelOne endpoints request site_id=%s", site_id)
     if not api_url or not api_token:
         return jsonify({
             'error': 'SentinelOne API credentials not configured. Please set SENTINELONE_API_URL and SENTINELONE_API_TOKEN in .env file'
@@ -444,8 +537,9 @@ def get_sentinelone_endpoints():
             )
             
             if response.status_code != 200:
+                logger.warning("SentinelOne agents error status=%s", response.status_code)
                 return jsonify({
-                    'error': f'SentinelOne API error: {response.status_code} - {response.text}'
+                    'error': f'SentinelOne API error: {response.status_code}'
                 }), response.status_code
             
             data = response.json()
@@ -490,6 +584,10 @@ def get_sentinelone_endpoints():
 @app.route('/sentinelone/upload', methods=['POST'])
 def upload_sentinelone_data():
     """Create a virtual file from SentinelOne endpoint data."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
     data = request.json
     file_id = data.get('file_id', '1')
     endpoints = data.get('endpoints', [])
@@ -533,6 +631,9 @@ def upload_sentinelone_data():
 @app.route('/ninjarmm/test', methods=['GET'])
 def test_ninjarmm_auth():
     """Test different authentication methods for NinjaRMM."""
+    if os.getenv('ENABLE_NINJARMM_TEST', '0') not in ('1', 'true', 'True'):
+        return jsonify({'error': 'Not found'}), 404
+
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
     api_key = os.getenv('NINJARMM_API_KEY')
     api_secret = os.getenv('NINJARMM_API_SECRET')
@@ -619,95 +720,29 @@ def test_ninjarmm_auth():
 def get_ninjarmm_organizations():
     """Fetch list of organizations from NinjaRMM API."""
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
-    
-    # Check which auth method to use
-    client_id = os.getenv('NINJARMM_CLIENT_ID')
-    client_secret = os.getenv('NINJARMM_CLIENT_SECRET')
-    api_key = os.getenv('NINJARMM_API_KEY')
-    api_secret = os.getenv('NINJARMM_API_SECRET')
-    
-    print(f"DEBUG: API URL: {api_url}")
-    print(f"DEBUG: Has client_id: {bool(client_id)}")
-    print(f"DEBUG: Has api_key: {bool(api_key)}")
-    
-    if not (client_id and client_secret) and not (api_key and api_secret):
-        return jsonify({
-            'error': 'NinjaRMM API credentials not configured. Please set either NINJARMM_CLIENT_ID/CLIENT_SECRET (Client App API) or NINJARMM_API_KEY/API_SECRET (Legacy API) in .env file'
-        }), 400
-    
+
     try:
-        headers = {'Accept': 'application/json'}
-        auth = None
-        
-        # Use Client App API (OAuth) if credentials provided
-        if client_id and client_secret:
-            print("DEBUG: Using Client App API (OAuth)")
-            # Get OAuth token - NinjaRMM expects form-encoded data, not JSON
-            token_response = requests.post(
-                f'{api_url}/oauth/token',
-                data={  # Use 'data' for form-encoded, not 'json'
-                    'grant_type': 'client_credentials',
-                    'client_id': client_id,
-                    'client_secret': client_secret,
-                    'scope': 'monitoring'
-                },
-                headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                timeout=30
-            )
-            
-            print(f"DEBUG: OAuth response: {token_response.status_code}")
-            
-            if token_response.status_code != 200:
-                return jsonify({
-                    'error': f'NinjaRMM OAuth error: {token_response.status_code} - {token_response.text}'
-                }), token_response.status_code
-            
-            access_token = token_response.json().get('access_token')
-            headers['Authorization'] = f'Bearer {access_token}'
-        elif api_key and api_secret:
-            # Use Legacy API - Try WITHOUT Authorization header
-            print("DEBUG: Using Legacy API")
-            print(f"DEBUG: API Key: {api_key[:5]}...")
-            # NinjaRMM Legacy might use query parameters or different auth
-            # Let's try the requests auth parameter which should work
-            auth = (api_key, api_secret)
-            print("DEBUG: Using requests auth parameter (Basic Auth)")
-        
-        print(f"DEBUG: Calling {api_url}/v2/organizations")
-        print(f"DEBUG: Headers: {headers}")
-        print(f"DEBUG: Auth set: {bool(auth)}")
-        
+        headers, auth = _get_ninja_auth(api_url)
         response = requests.get(
             f'{api_url}/v2/organizations',
             headers=headers,
             auth=auth,
             timeout=30
         )
-        
-        print(f"DEBUG: Response status: {response.status_code}")
-        print(f"DEBUG: Response body: {response.text[:200]}")
-        
+
         if response.status_code != 200:
-            return jsonify({
-                'error': f'NinjaRMM API error: {response.status_code} - {response.text}'
-            }), response.status_code
-        
+            logger.warning("NinjaRMM organizations error status=%s", response.status_code)
+            return jsonify({'error': f'NinjaRMM API error: {response.status_code}'}), response.status_code
+
         orgs = response.json()
-        
-        # Format organizations for dropdown
-        org_list = [
-            {'id': org['id'], 'name': org['name']} 
-            for org in orgs
-        ]
-        
-        # Sort alphabetically
+
+        org_list = [{'id': org['id'], 'name': org['name']} for org in orgs]
         org_list.sort(key=lambda x: x['name'])
-        
-        return jsonify({
-            'success': True,
-            'organizations': org_list
-        })
-    
+
+        return jsonify({'success': True, 'organizations': org_list})
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except requests.exceptions.Timeout:
         return jsonify({'error': 'NinjaRMM API request timed out'}), 504
     except requests.exceptions.RequestException as e:
@@ -723,65 +758,18 @@ def get_ninjarmm_devices():
     org_id = request.args.get('org_id')
     if org_id in [None, '', 'all', 'null', 'undefined']:
         org_id = None
-        
-    print(f"DEBUG: NinjaRMM Devices request. org_id: {org_id}")
-    # Check which auth method to use
-    client_id = os.getenv('NINJARMM_CLIENT_ID')
-    client_secret = os.getenv('NINJARMM_CLIENT_SECRET')
-    api_key = os.getenv('NINJARMM_API_KEY')
-    api_secret = os.getenv('NINJARMM_API_SECRET')
-    
-    if not (client_id and client_secret) and not (api_key and api_secret):
-        return jsonify({
-            'error': 'NinjaRMM API credentials not configured.'
-        }), 400
-    
+
     try:
-        headers = {'Accept': 'application/json'}
-        auth = None
-        
-        # Use Client App API (OAuth) if credentials provided
-        if client_id and client_secret:
-            # Get OAuth token - NinjaRMM expects form-encoded data
-            token_response = requests.post(
-                f'{api_url}/oauth/token',
-                data={  # Use 'data' for form-encoded, not 'json'
-                    'grant_type': 'client_credentials',
-                    'client_id': client_id,
-                    'client_secret': client_secret,
-                    'scope': 'monitoring'
-                },
-                headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                timeout=30
-            )
-            
-            if token_response.status_code != 200:
-                return jsonify({
-                    'error': f'NinjaRMM OAuth error: {token_response.status_code}'
-                }), token_response.status_code
-            
-            access_token = token_response.json().get('access_token')
-            headers['Authorization'] = f'Bearer {access_token}'
-        elif api_key and api_secret:
-            # Use Legacy API
-            auth = (api_key, api_secret)
-        
+        headers, auth = _get_ninja_auth(api_url)
+
         devices = []
         page_num = 0
         page_size = 1000
-        
-        # Paginate through all devices
+
         while True:
-            params = {
-                'pageSize': page_size,
-                'page': page_num
-            }
-            
-            if org_id:
-                endpoint = f'{api_url}/v2/organization/{org_id}/devices'
-            else:
-                endpoint = f'{api_url}/v2/devices'
-            
+            params = {'pageSize': page_size, 'page': page_num}
+            endpoint = f'{api_url}/v2/organization/{org_id}/devices' if org_id else f'{api_url}/v2/devices'
+
             response = requests.get(
                 endpoint,
                 headers=headers,
@@ -789,45 +777,38 @@ def get_ninjarmm_devices():
                 params=params,
                 timeout=30
             )
-            
+
             if response.status_code != 200:
-                return jsonify({
-                    'error': f'NinjaRMM API error: {response.status_code} - {response.text}'
-                }), response.status_code
-            
+                logger.warning("NinjaRMM devices error status=%s", response.status_code)
+                return jsonify({'error': f'NinjaRMM API error: {response.status_code}'}), response.status_code
+
             data = response.json()
-            
             if not data:
                 break
-            
-            # Extract device names, IDs, and last contact times
+
             for device in data:
                 device_name = device.get('systemName') or device.get('dnsName')
                 if device_name:
                     devices.append({
                         'name': fix_encoding(device_name),
-                        'id': device.get('id'),  # Device ID for script execution
-                        'lastContact': device.get('lastContact')  # Unix timestamp (seconds)
+                        'id': device.get('id'),
+                        'lastContact': device.get('lastContact')
                     })
-            
-            # Check if there are more pages
+
             if len(data) < page_size:
                 break
             page_num += 1
-        
-        # Remove duplicates by name (keep first occurrence with lastContact)
+
         seen = {}
         for dev in devices:
             if dev['name'] not in seen:
                 seen[dev['name']] = dev
         devices = sorted(seen.values(), key=lambda x: x['name'])
-        
-        return jsonify({
-            'success': True,
-            'devices': devices,
-            'count': len(devices)
-        })
-    
+
+        return jsonify({'success': True, 'devices': devices, 'count': len(devices)})
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except requests.exceptions.Timeout:
         return jsonify({'error': 'NinjaRMM API request timed out'}), 504
     except requests.exceptions.RequestException as e:
@@ -839,6 +820,10 @@ def get_ninjarmm_devices():
 @app.route('/ninjarmm/upload', methods=['POST'])
 def upload_ninjarmm_data():
     """Create a virtual file from NinjaRMM device data."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
     data = request.json
     file_id = data.get('file_id', '1')
     devices = data.get('devices', [])
@@ -913,32 +898,12 @@ def get_unified_clients():
                 data = response.json()
                 s1_sites = [{'id': site['id'], 'name': site['name']} for site in data.get('data', {}).get('sites', [])]
         except Exception as e:
-            print(f"Error fetching S1 sites: {e}")
+            logger.warning("Error fetching S1 sites: %s", e)
     
     # Fetch NinjaRMM organizations
     if ninja_available:
         try:
-            headers = {'Accept': 'application/json'}
-            auth = None
-            
-            if ninja_client_id and ninja_client_secret:
-                token_response = requests.post(
-                    f'{ninja_url}/oauth/token',
-                    data={
-                        'grant_type': 'client_credentials',
-                        'client_id': ninja_client_id,
-                        'client_secret': ninja_client_secret,
-                        'scope': 'monitoring'
-                    },
-                    headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                    timeout=30
-                )
-                if token_response.status_code == 200:
-                    access_token = token_response.json().get('access_token')
-                    headers['Authorization'] = f'Bearer {access_token}'
-            elif ninja_api_key and ninja_api_secret:
-                auth = (ninja_api_key, ninja_api_secret)
-            
+            headers, auth = _get_ninja_auth(ninja_url)
             response = requests.get(
                 f'{ninja_url}/v2/organizations',
                 headers=headers,
@@ -947,8 +912,10 @@ def get_unified_clients():
             )
             if response.status_code == 200:
                 ninja_orgs = [{'id': org['id'], 'name': org['name']} for org in response.json()]
+            else:
+                logger.warning("Error fetching Ninja orgs: status=%s", response.status_code)
         except Exception as e:
-            print(f"Error fetching Ninja orgs: {e}")
+            logger.warning("Error fetching Ninja orgs: %s", e)
     
     # Match clients by normalized name
     def normalize_name(name):
@@ -1023,91 +990,32 @@ def get_unified_clients():
 def get_ninjarmm_scripts():
     """Fetch available scripts from NinjaRMM API."""
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
-    
-    print(f"DEBUG: Fetching NinjaRMM scripts")
-    
-    # Check which auth method to use
-    client_id = os.getenv('NINJARMM_CLIENT_ID')
-    client_secret = os.getenv('NINJARMM_CLIENT_SECRET')
-    api_key = os.getenv('NINJARMM_API_KEY')
-    api_secret = os.getenv('NINJARMM_API_SECRET')
-    
-    if not (client_id and client_secret) and not (api_key and api_secret):
-        return jsonify({
-            'error': 'NinjaRMM API credentials not configured.'
-        }), 400
-    
+
     try:
-        headers = {'Accept': 'application/json'}
-        auth = None
-        
-        # Use Client App API (OAuth) if credentials provided
-        if client_id and client_secret:
-            # Get OAuth token
-            token_response = requests.post(
-                f'{api_url}/oauth/token',
-                data={
-                    'grant_type': 'client_credentials',
-                    'client_id': client_id,
-                    'client_secret': client_secret,
-                    'scope': 'monitoring'
-                },
-                headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                timeout=30
-            )
-            
-            if token_response.status_code != 200:
-                return jsonify({
-                    'error': f'NinjaRMM OAuth error: {token_response.status_code}',
-                    'details': token_response.text
-                }), token_response.status_code
-            
-            access_token = token_response.json().get('access_token')
-            headers['Authorization'] = f'Bearer {access_token}'
-        elif api_key and api_secret:
-            # Use Legacy API
-            auth = (api_key, api_secret)
-        
-        # Fetch scripts - try multiple possible endpoints
+        headers, auth = _get_ninja_auth(api_url)
+
         possible_endpoints = [
             f'{api_url}/v2/automation/scripts',
             f'{api_url}/v2/queries/scripts',
             f'{api_url}/v2/scripts'
         ]
-        
+
         scripts_data = None
         last_error = None
-        
+
         for endpoint in possible_endpoints:
             try:
-                print(f"DEBUG: Trying scripts endpoint: {endpoint}")
-                response = requests.get(
-                    endpoint,
-                    headers=headers,
-                    auth=auth,
-                    timeout=30
-                )
-                
-                print(f"DEBUG: Response status: {response.status_code}")
-                
+                response = requests.get(endpoint, headers=headers, auth=auth, timeout=30)
                 if response.status_code == 200:
                     scripts_data = response.json()
-                    print(f"DEBUG: Successfully fetched {len(scripts_data)} scripts from {endpoint}")
                     break
-                else:
-                    last_error = f"{response.status_code}: {response.text[:200]}"
-                    print(f"DEBUG: Failed with {last_error}")
+                last_error = f"{response.status_code}"
             except Exception as e:
                 last_error = str(e)
-                print(f"DEBUG: Exception: {last_error}")
-                continue
-        
+
         if scripts_data is None:
-            return jsonify({
-                'error': f'Could not fetch scripts from any endpoint. Last error: {last_error}'
-            }), 404
-        
-        # Format scripts for easier consumption
+            return jsonify({'error': f'Could not fetch scripts. Last error: {last_error}'}), 404
+
         scripts = []
         for script in scripts_data:
             scripts.append({
@@ -1117,13 +1025,11 @@ def get_ninjarmm_scripts():
                 'category': script.get('category', 'Uncategorized'),
                 'language': script.get('scriptType', 'Unknown')
             })
-        
-        return jsonify({
-            'success': True,
-            'scripts': scripts,
-            'count': len(scripts)
-        })
-    
+
+        return jsonify({'success': True, 'scripts': scripts, 'count': len(scripts)})
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except requests.exceptions.Timeout:
         return jsonify({'error': 'NinjaRMM API request timed out'}), 504
     except requests.exceptions.RequestException as e:
@@ -1135,8 +1041,12 @@ def get_ninjarmm_scripts():
 @app.route('/ninjarmm/run-script', methods=['POST'])
 def run_ninjarmm_script():
     """Trigger a script to run on a specific NinjaRMM device."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
-    
+
     # Get request parameters
     data = request.get_json()
     device_id = data.get('device_id')
@@ -1148,49 +1058,11 @@ def run_ninjarmm_script():
     if not script_id:
         return jsonify({'error': 'script_id is required'}), 400
     
-    print(f"DEBUG: Running script {script_id} on device {device_id}")
-    
-    # Check which auth method to use
-    client_id = os.getenv('NINJARMM_CLIENT_ID')
-    client_secret = os.getenv('NINJARMM_CLIENT_SECRET')
-    api_key = os.getenv('NINJARMM_API_KEY')
-    api_secret = os.getenv('NINJARMM_API_SECRET')
-    
-    if not (client_id and client_secret) and not (api_key and api_secret):
-        return jsonify({
-            'error': 'NinjaRMM API credentials not configured.'
-        }), 400
-    
+    logger.info("Triggering NinjaRMM script_id=%s device_id=%s", script_id, device_id)
+
     try:
-        headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
-        auth = None
-        
-        # Use Client App API (OAuth) if credentials provided
-        if client_id and client_secret:
-            # Get OAuth token
-            token_response = requests.post(
-                f'{api_url}/oauth/token',
-                data={
-                    'grant_type': 'client_credentials',
-                    'client_id': client_id,
-                    'client_secret': client_secret,
-                    'scope': 'monitoring'
-                },
-                headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                timeout=30
-            )
-            
-            if token_response.status_code != 200:
-                return jsonify({
-                    'error': f'NinjaRMM OAuth error: {token_response.status_code}',
-                    'details': token_response.text
-                }), token_response.status_code
-            
-            access_token = token_response.json().get('access_token')
-            headers['Authorization'] = f'Bearer {access_token}'
-        elif api_key and api_secret:
-            # Use Legacy API
-            auth = (api_key, api_secret)
+        headers, auth = _get_ninja_auth(api_url)
+        headers = {**headers, 'Content-Type': 'application/json'}
         
         # Prepare script execution payload
         payload = {
@@ -1223,8 +1095,7 @@ def run_ninjarmm_script():
             })
         else:
             return jsonify({
-                'error': f'NinjaRMM API error: {response.status_code}',
-                'details': response.text
+                'error': f'NinjaRMM API error: {response.status_code}'
             }), response.status_code
     
     except requests.exceptions.Timeout:
@@ -1238,11 +1109,17 @@ def run_ninjarmm_script():
 @app.route('/cleanup', methods=['POST'])
 def cleanup():
     """Clean up uploaded files."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
+    uploads_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
     if 'files' in session:
         for file_id, filepath in session['files'].items():
             try:
-                if os.path.exists(filepath):
-                    os.remove(filepath)
+                abs_path = os.path.abspath(filepath)
+                if abs_path.startswith(uploads_root) and os.path.exists(abs_path):
+                    os.remove(abs_path)
             except Exception:
                 pass
         session.pop('files', None)
@@ -1251,11 +1128,8 @@ def cleanup():
 
 
 if __name__ == '__main__':
-    print("\n" + "="*60)
-    print("  Endpoint Comparison Tool")
-    print("  SentinelOne vs NinjaRMM")
-    print("  Open http://localhost:5000 in your browser")
-    print("="*60 + "\n")
-    app.run(debug=True, port=5000)
+    logger.info("Endpoint Comparison Tool starting (http://localhost:5000)")
+    debug = os.getenv('FLASK_DEBUG', '0') in ('1', 'true', 'True')
+    app.run(debug=debug, port=int(os.getenv('PORT', '5000')))
 
 
