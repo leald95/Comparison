@@ -33,6 +33,18 @@ _NINJA_TOKEN_CACHE = {
 # Key: (client_name, days) -> {path, count, received_at}
 _AD_CACHE = {}
 
+# One-time tokens for AD intake (minted per /ad/trigger).
+# Key: token -> {client, days, expires_at}
+_AD_INTAKE_NONCES = {}
+_AD_INTAKE_NONCE_TTL_SECONDS = 15 * 60
+
+
+def _prune_ad_intake_nonces(now=None):
+    now = now or time.time()
+    expired = [t for t, v in _AD_INTAKE_NONCES.items() if v.get('expires_at', 0) <= now]
+    for t in expired:
+        _AD_INTAKE_NONCES.pop(t, None)
+
 
 def fix_encoding(value):
     """
@@ -1252,9 +1264,7 @@ def trigger_ad_inventory():
     if csrf_err:
         return csrf_err
 
-    token = os.getenv('AD_INTAKE_TOKEN_CURRENT')
-    if not token:
-        return jsonify({'error': 'AD intake token is not configured'}), 500
+    _prune_ad_intake_nonces()
 
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict):
@@ -1275,6 +1285,14 @@ def trigger_ad_inventory():
 
     if days not in (30, 60, 90):
         return jsonify({'error': 'days must be one of: 30, 60, 90'}), 400
+
+    # Mint a one-time token for this specific AD request; the Ninja script will POST it back.
+    token = secrets.token_urlsafe(32)
+    _AD_INTAKE_NONCES[token] = {
+        'client': client,
+        'days': days,
+        'expires_at': time.time() + _AD_INTAKE_NONCE_TTL_SECONDS,
+    }
 
     try:
         device_id = int(device_id)
@@ -1324,13 +1342,10 @@ def trigger_ad_inventory():
 @app.route('/ad/intake', methods=['POST'])
 def ad_intake():
     """Receive AD computer inventory from a Ninja-run script."""
-    current = os.getenv('AD_INTAKE_TOKEN_CURRENT')
-    previous = os.getenv('AD_INTAKE_TOKEN_PREVIOUS')
-    if not current and not previous:
-        return jsonify({'error': 'AD intake token is not configured'}), 500
+    _prune_ad_intake_nonces()
 
     provided = request.headers.get('X-AD-Intake-Token')
-    if not provided or provided not in {t for t in (current, previous) if t}:
+    if not provided:
         return jsonify({'error': 'Unauthorized'}), 401
 
     payload = request.get_json(silent=True) or {}
@@ -1351,6 +1366,17 @@ def ad_intake():
 
     if days not in (30, 60, 90):
         return jsonify({'error': 'days must be one of: 30, 60, 90'}), 400
+
+    # Authorize via either a static token (manual/legacy use) or a one-time token minted per /ad/trigger.
+    current = os.getenv('AD_INTAKE_TOKEN_CURRENT')
+    previous = os.getenv('AD_INTAKE_TOKEN_PREVIOUS')
+    if provided in {t for t in (current, previous) if t}:
+        pass
+    else:
+        nonce = _AD_INTAKE_NONCES.get(provided)
+        if not nonce or nonce.get('client') != client or int(nonce.get('days') or 0) != days or nonce.get('expires_at', 0) <= time.time():
+            return jsonify({'error': 'Unauthorized'}), 401
+        _AD_INTAKE_NONCES.pop(provided, None)
 
     if not isinstance(items, list):
         return jsonify({'error': 'workstations must be a list'}), 400
