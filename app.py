@@ -1424,6 +1424,7 @@ def trigger_ad_inventory():
         # Some Ninja tenants are picky about the script-run payload/parameter format and/or fields.
         # We try multiple parameter encodings and payload shapes to work around tenant-specific quirks.
         param_variants = [
+            ('no_params', None),  # Try without parameters first to isolate NPE issue
             ('kv_lines', _format_ninja_parameters_kv_lines(script_params)),
             ('json', json.dumps(script_params, separators=(',', ':')))
         ]
