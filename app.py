@@ -1559,11 +1559,13 @@ def ad_debug():
         headers, auth = _get_ninja_auth(api_url)
         
         # Decode OAuth token to check permissions (if using OAuth)
-        if hasattr(auth, 'token') and auth.token:
+        auth_header = headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
             import base64
+            token = auth_header[7:]  # Remove "Bearer " prefix
             try:
                 # JWT tokens have 3 parts separated by dots: header.payload.signature
-                token_parts = auth.token.split('.')
+                token_parts = token.split('.')
                 if len(token_parts) >= 2:
                     # Decode the payload (second part)
                     # Add padding if needed
@@ -1578,6 +1580,7 @@ def ad_debug():
                         'expires_at': token_claims.get('exp'),
                         'subject': token_claims.get('sub'),
                         'audience': token_claims.get('aud'),
+                        'token_type': 'Bearer/JWT'
                     }
             except Exception as e:
                 result['oauth_token_info'] = {'error': f'Failed to decode token: {str(e)}'}
