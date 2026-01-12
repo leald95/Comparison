@@ -1090,20 +1090,90 @@ def run_ninjarmm_script():
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
 
     # Get request parameters
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Invalid JSON body'}), 400
+
     device_id = data.get('device_id')
     script_id = data.get('script_id')
     script_params = data.get('parameters', {})  # Optional script parameters
-    
-    if not device_id:
+
+    if device_id in (None, ''):
         return jsonify({'error': 'device_id is required'}), 400
-    if not script_id:
+    if script_id in (None, ''):
         return jsonify({'error': 'script_id is required'}), 400
-    
-    logger.info("Triggering NinjaRMM script_id=%s device_id=%s", script_id, device_id)
+
+    try:
+        device_id = int(device_id)
+        script_id = int(script_id)
+    except Exception:
+        return jsonify({'error': 'device_id and script_id must be integers'}), 400
+
+    if script_params is None:
+        script_params = {}
+    if not isinstance(script_params, dict):
+        return jsonify({'error': 'parameters must be an object'}), 400
+
+    allowed = os.getenv('NINJARMM_ALLOWED_SCRIPT_IDS', '').strip()
+    if allowed:
+        try:
+            allowed_ids = {int(x) for x in re.split(r'[\s,]+', allowed) if x}
+        except Exception:
+            return jsonify({'error': 'Server allowlist is misconfigured'}), 500
+        if script_id not in allowed_ids:
+            return jsonify({'error': 'Script not allowed'}), 403
+
+    logger.info("Triggering NinjaRMM script_id=%s device_id=%s from=%s", script_id, device_id, request.remote_addr)
 
     try:
         headers, auth = _get_ninja_auth(api_url)
+
+        require_online = os.getenv('NINJARMM_REQUIRE_DEVICE_ONLINE', '1') in ('1', 'true', 'True')
+        if require_online:
+            try:
+                max_age = int(os.getenv('NINJARMM_ONLINE_MAX_AGE_SECONDS', '300'))
+            except Exception:
+                max_age = 300
+
+            device_data = None
+            for endpoint in (f'{api_url}/v2/device/{device_id}', f'{api_url}/v2/devices/{device_id}'):
+                try:
+                    r = requests.get(endpoint, headers=headers, auth=auth, timeout=10)
+                    if r.status_code == 200:
+                        device_data = r.json()
+                        break
+                except Exception:
+                    pass
+
+            if device_data is None:
+                # Fallback: query list endpoint and search
+                try:
+                    r = requests.get(f'{api_url}/v2/devices', headers=headers, auth=auth, timeout=10)
+                    if r.status_code == 200:
+                        for d in (r.json() or []):
+                            if d.get('id') == device_id:
+                                device_data = d
+                                break
+                except Exception:
+                    pass
+
+            if not device_data:
+                return jsonify({'error': 'Device not found'}), 404
+
+            last_contact = device_data.get('lastContact')
+            if not last_contact:
+                return jsonify({'error': 'Device online status unavailable'}), 403
+
+            try:
+                last_contact = float(last_contact)
+                if last_contact > 1e12:
+                    last_contact = last_contact / 1000.0
+                age = time.time() - last_contact
+                if age > max_age:
+                    return jsonify({'error': f'Device not online (last contact {int(age)}s ago)'}), 403
+            except Exception:
+                return jsonify({'error': 'Device online status invalid'}), 403
+
         headers = {**headers, 'Content-Type': 'application/json'}
         
         # Prepare script execution payload
