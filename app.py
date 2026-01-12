@@ -1428,10 +1428,10 @@ def trigger_ad_inventory():
             ('json', json.dumps(script_params, separators=(',', ':')))
         ]
 
-        # Endpoints to try: /api/v2 first (confirmed working), then /v2 fallback
+        # Endpoints to try: /v2 first (per OpenAPI spec), then /api/v2 fallback  
         endpoints = [
-            f'{api_url}/api/v2/device/{device_id}/script/run',
             f'{api_url}/v2/device/{device_id}/script/run',
+            f'{api_url}/api/v2/device/{device_id}/script/run',
         ]
 
         last_resp = None
