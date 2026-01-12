@@ -218,14 +218,14 @@ def _get_ninja_auth(api_url):
                 'grant_type': 'client_credentials',
                 'client_id': client_id,
                 'client_secret': client_secret,
-                'scope': 'monitoring'
+                'scope': os.getenv('NINJARMM_OAUTH_SCOPE', 'monitoring')
             },
             headers={'Content-Type': 'application/x-www-form-urlencoded'},
             timeout=30
         )
 
         if token_response.status_code != 200:
-            raise ValueError(f"NinjaRMM OAuth error: {token_response.status_code}")
+            raise ValueError(f"NinjaRMM OAuth error: {token_response.status_code} {token_response.text[:200]}")
 
         token_json = token_response.json()
         access_token = token_json.get('access_token')
@@ -1335,7 +1335,7 @@ def trigger_ad_inventory():
         if response.status_code in (200, 204):
             return jsonify({'success': True, 'message': 'AD inventory triggered'})
 
-        return jsonify({'error': f'NinjaRMM API error: {response.status_code}'}), response.status_code
+        return jsonify({'error': f'NinjaRMM API error: {response.status_code} {response.text[:200]}'}), response.status_code
 
     except requests.exceptions.Timeout:
         return jsonify({'error': 'NinjaRMM API request timed out'}), 504
