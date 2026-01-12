@@ -7,6 +7,7 @@ import os
 import re
 import time
 import logging
+import json
 import requests
 import base64
 import secrets
@@ -1152,8 +1153,13 @@ def run_ninjarmm_script():
 
     if script_params is None:
         script_params = {}
-    if not isinstance(script_params, dict):
-        return jsonify({'error': 'parameters must be an object'}), 400
+
+    if isinstance(script_params, dict):
+        ninja_parameters = json.dumps(script_params, separators=(',', ':'))
+    elif isinstance(script_params, str):
+        ninja_parameters = script_params
+    else:
+        return jsonify({'error': 'parameters must be an object or string'}), 400
 
     allowed = os.getenv('NINJARMM_ALLOWED_SCRIPT_IDS', '').strip()
     if allowed:
@@ -1219,10 +1225,11 @@ def run_ninjarmm_script():
         
         # Prepare script execution payload
         # Ninja expects fields like: id/type/uid/runAs/parameters (not scriptId)
+        # Note: Ninja expects parameters as a string.
         payload = {
             'id': script_id,
-            'type': 'script',
-            'parameters': script_params
+            'type': 'SCRIPT',
+            'parameters': ninja_parameters
         }
         
         # Execute script on device
@@ -1250,7 +1257,7 @@ def run_ninjarmm_script():
             })
         else:
             return jsonify({
-                'error': f'NinjaRMM API error: {response.status_code}'
+                'error': f'NinjaRMM API error: {response.status_code} {response.text[:200]}'
             }), response.status_code
     
     except requests.exceptions.Timeout:
@@ -1328,8 +1335,8 @@ def trigger_ad_inventory():
 
         payload = {
             'id': script_id,
-            'type': 'script',
-            'parameters': script_params
+            'type': 'SCRIPT',
+            'parameters': json.dumps(script_params, separators=(',', ':'))
         }
 
         endpoint = f'{api_url}/v2/device/{device_id}/script/run'

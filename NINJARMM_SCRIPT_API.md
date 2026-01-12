@@ -80,7 +80,7 @@ fetch('/ninjarmm/scripts')
 **Parameters:**
 - `device_id` (required): The NinjaRMM device ID (obtained from `/ninjarmm/devices`)
 - `script_id` (required): The script ID (obtained from `/ninjarmm/scripts`)
-- `parameters` (optional): Object containing script parameters as key-value pairs
+- `parameters` (optional): Object (or string) containing script parameters (backend serializes objects to a JSON string for Ninja)
 
 **Response (Success):**
 ```json
