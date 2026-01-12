@@ -101,6 +101,13 @@ app = Flask(__name__)
 # Use a stable secret key if provided; falls back to a random key for local dev.
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY') or os.urandom(24)
 
+
+@app.before_request
+def _normalize_session_files_keys():
+    files = session.get('files')
+    if isinstance(files, dict):
+        session['files'] = {str(k): v for k, v in files.items()}
+
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max
 
@@ -117,7 +124,15 @@ def allowed_file(filename):
 def _require_csrf():
     if request.method != 'POST':
         return None
+
     token = request.headers.get('X-CSRF-Token')
+    if not token:
+        if request.is_json:
+            payload = request.get_json(silent=True) or {}
+            token = payload.get('csrf_token')
+        else:
+            token = request.form.get('csrf_token')
+
     if not token or token != session.get('csrf_token'):
         return jsonify({'error': 'CSRF token missing or invalid'}), 403
     return None
@@ -196,6 +211,11 @@ def index():
     return render_template('index.html', csrf_token=session['csrf_token'])
 
 
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
+
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     """Handle file upload and return column information."""
@@ -207,7 +227,7 @@ def upload_file():
         return jsonify({'error': 'No file provided'}), 400
     
     file = request.files['file']
-    file_id = request.form.get('file_id', '1')
+    file_id = str(request.form.get('file_id', '1'))
     
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
@@ -257,6 +277,7 @@ def get_columns():
 
     data = request.json
     file_id = data.get('file_id')
+    file_id = str(file_id) if file_id is not None else None
     sheet_name = data.get('sheet_name')
     
     if 'files' not in session or file_id not in session['files']:
@@ -286,6 +307,7 @@ def preview_column():
 
     data = request.json
     file_id = data.get('file_id')
+    file_id = str(file_id) if file_id is not None else None
     sheet_name = data.get('sheet_name')
     column_name = data.get('column_name')
     
@@ -589,7 +611,7 @@ def upload_sentinelone_data():
         return csrf_err
 
     data = request.json
-    file_id = data.get('file_id', '1')
+    file_id = str(data.get('file_id', '1'))
     endpoints = data.get('endpoints', [])
     
     if not endpoints:
@@ -825,7 +847,7 @@ def upload_ninjarmm_data():
         return csrf_err
 
     data = request.json
-    file_id = data.get('file_id', '1')
+    file_id = str(data.get('file_id', '1'))
     devices = data.get('devices', [])
     
     if not devices:
@@ -1108,12 +1130,18 @@ def run_ninjarmm_script():
 
 @app.route('/cleanup', methods=['POST'])
 def cleanup():
-    """Clean up uploaded files."""
+    """Clean up uploaded files.
+
+    - Removes files referenced by the current session.
+    - Prunes old files from uploads/ to avoid orphan buildup.
+    """
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err
 
     uploads_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
+
+    # 1) Remove session-tracked files
     if 'files' in session:
         for file_id, filepath in session['files'].items():
             try:
@@ -1123,8 +1151,34 @@ def cleanup():
             except Exception:
                 pass
         session.pop('files', None)
-    
-    return jsonify({'success': True})
+
+    # 2) Prune old/orphan uploads (age-based)
+    try:
+        retention_hours = int(os.getenv('UPLOAD_RETENTION_HOURS', '24'))
+    except Exception:
+        retention_hours = 24
+
+    retention_seconds = max(0, retention_hours) * 3600
+    now = time.time()
+
+    try:
+        for name in os.listdir(uploads_root):
+            path = os.path.abspath(os.path.join(uploads_root, name))
+            if not path.startswith(uploads_root):
+                continue
+            if not os.path.isfile(path):
+                continue
+
+            try:
+                age_seconds = now - os.path.getmtime(path)
+                if age_seconds >= retention_seconds:
+                    os.remove(path)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return jsonify({'success': True, 'retention_hours': retention_hours})
 
 
 if __name__ == '__main__':

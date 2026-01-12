@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token }}">
     <title>Endpoint Comparison Tool - SentinelOne vs NinjaRMM</title>
+    <link rel="icon" href="/favicon.ico">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -1003,6 +1004,118 @@
         .export-btn-container {
             text-align: center;
             margin-bottom: 2rem;
+        }
+
+        /* Data Sources Info with Refresh Buttons */
+        .data-sources-info {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+            padding: 0 1rem;
+        }
+
+        .source-info-card {
+            flex: 1;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .source-info-card:hover {
+            border-color: var(--border-accent);
+            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.1);
+        }
+
+        .source-info-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex: 1;
+        }
+
+        .source-info-icon {
+            font-size: 2rem;
+            line-height: 1;
+        }
+
+        .source-info-details {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .source-info-name {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .source-info-meta {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .refresh-data-btn {
+            padding: 0.625rem 1.25rem;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 10px;
+            color: var(--accent-blue);
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            white-space: nowrap;
+        }
+
+        .refresh-data-btn:hover:not(:disabled) {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.25) 0%, rgba(139, 92, 246, 0.25) 100%);
+            border-color: rgba(59, 130, 246, 0.5);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+        }
+
+        .refresh-data-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .refresh-data-btn.loading {
+            pointer-events: none;
+        }
+
+        .refresh-data-btn.loading .refresh-icon {
+            animation: spin 1s linear infinite;
+        }
+
+        .refresh-icon {
+            font-size: 1rem;
+            transition: transform 0.3s ease;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .data-sources-info {
+                flex-direction: column;
+            }
+
+            .refresh-data-btn .refresh-text {
+                display: none;
+            }
         }
 
         .empty-state-icon {
@@ -2046,6 +2159,18 @@
                 <!-- Stats will be inserted here -->
             </div>
 
+            <!-- Refresh Buttons (counts are shown in the button text) -->
+            <div class="data-sources-info" id="data-sources-info" style="display: none;">
+                <button type="button" class="refresh-data-btn" id="refresh-data-1" title="Re-fetch data from API">
+                    <span class="refresh-icon">🔄</span>
+                    <span class="refresh-text" id="refresh-text-1">Refresh</span>
+                </button>
+                <button type="button" class="refresh-data-btn" id="refresh-data-2" title="Re-fetch data from API">
+                    <span class="refresh-icon">🔄</span>
+                    <span class="refresh-text" id="refresh-text-2">Refresh</span>
+                </button>
+            </div>
+
             <div class="export-btn-container">
                 <button type="button" class="export-btn" id="export-btn">
                     <span>📥 Export to HTML</span>
@@ -2132,7 +2257,7 @@
             <div class="offline-section collapsed" id="offline-section" style="display: none;">
                 <div class="offline-header" onclick="toggleOfflineSection()">
                     <span class="offline-icon">⚠️</span>
-                    <span class="offline-title">Devices Offline > 30 Days</span>
+                    <span class="offline-title" id="offline-section-title">Devices Offline > 30 Days</span>
                     <span class="offline-toggle" id="offline-toggle">▼</span>
                 </div>
                 <div class="offline-content" id="offline-content">
@@ -2294,6 +2419,27 @@
             <div class="modal-content" style="padding: 2rem;">
                 <div class="settings-section">
                     <div class="settings-section-title">
+                        ⏱️ Offline Threshold
+                    </div>
+                    <div class="settings-section-desc">
+                        Define how many days without contact should mark a device as offline. This applies to both SentinelOne and NinjaRMM.
+                    </div>
+                    <div class="settings-select-wrapper">
+                        <select id="offline-days-select" class="settings-select">
+                            <option value="7">7 days</option>
+                            <option value="14">14 days</option>
+                            <option value="30" selected>30 days (default)</option>
+                            <option value="60">60 days</option>
+                            <option value="90">90 days</option>
+                        </select>
+                    </div>
+                    <div class="settings-info">
+                        💡 <strong>Tip:</strong> Devices that haven't contacted their respective service in more than the specified days will be flagged as offline in the comparison results.
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-section-title">
                         🛠️ SentinelOne Remediation Script
                     </div>
                     <div class="settings-section-desc">
@@ -2344,7 +2490,8 @@
             lastHistorySave: null,  // Track last save timestamp to prevent duplicates
             remediationScriptId: null,  // Selected remediation script
             availableScripts: [],  // Available NinjaRMM scripts
-            ninjaDevices: []  // Store NinjaRMM devices with IDs for remediation
+            ninjaDevices: [],  // Store NinjaRMM devices with IDs for remediation
+            offlineDaysThreshold: 30  // Default offline threshold in days
         };
 
         // Last Source Config
@@ -2511,6 +2658,7 @@
 
         function renderOfflineDevices() {
             const offlineSection = document.getElementById('offline-section');
+            const offlineSectionTitle = document.getElementById('offline-section-title');
             const source1Container = document.getElementById('offline-source-1');
             const source2Container = document.getElementById('offline-source-2');
 
@@ -2518,6 +2666,11 @@
             const offline2 = state.file2.offlineDevices || [];
             const source1Name = state.file1.sourceType || 'File 1';
             const source2Name = state.file2.sourceType || 'File 2';
+
+            // Update section title with current threshold
+            if (offlineSectionTitle) {
+                offlineSectionTitle.textContent = `Devices Offline > ${state.offlineDaysThreshold} Days`;
+            }
 
             // Only show section if there are offline devices
             if (offline1.length === 0 && offline2.length === 0) {
@@ -2898,7 +3051,7 @@
                         fileMeta.textContent = `${data.row_count} rows • ${data.columns.length} columns`;
 
                         // Auto-select if only 1 column
-                        if (data.columns.length === 1) {
+                        if (columnSelect && data.columns.length === 1) {
                             columnSelect.value = data.columns[0];
                             state[`file${fileId}`].column = data.columns[0];
                             updateCompareButton();
@@ -3221,7 +3374,7 @@
 
             // Calculate offline devices
             const cutoffDate = new Date();
-            cutoffDate.setDate(cutoffDate.getDate() - 30);
+            cutoffDate.setDate(cutoffDate.getDate() - state.offlineDaysThreshold);
             const offlineDevices = [];
             for (const ep of endpoints) {
                 if (ep.lastActive && new Date(ep.lastActive) < cutoffDate) {
@@ -3249,8 +3402,10 @@
             const s1FetchBtn = document.getElementById(`s1-fetch-btn-${fileId}`);
             const dropZone = document.getElementById(`drop-zone-${fileId}`);
 
-            s1FetchBtn.classList.add('loading');
-            s1FetchBtn.disabled = true;
+            if (s1FetchBtn) {
+                s1FetchBtn.classList.add('loading');
+                s1FetchBtn.disabled = true;
+            }
 
             try {
                 // Fetch endpoints from SentinelOne with site_id filtering
@@ -3261,6 +3416,21 @@
                 console.log(`DEBUG: Fetching S1 Endpoints. URL: ${url}, Slot: ${fileId}, Site: ${siteName}`);
 
                 const response = await fetch(url);
+                
+                // Check if response is OK
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
+                }
+                
+                // Check content type before parsing
+                const contentTypeS1 = response.headers.get('content-type');
+                if (!contentTypeS1 || !contentTypeS1.includes('application/json')) {
+                    const text = await response.text();
+                    console.error('Non-JSON response:', text.substring(0, 200));
+                    throw new Error('Server returned non-JSON response. Check API configuration.');
+                }
+                
                 const data = await response.json();
 
                 if (!data.success) {
@@ -3274,9 +3444,9 @@
                 // Cache the fresh data
                 setCache('S1', siteId || 'all', siteName, data);
 
-                // Calculate offline devices (> 30 days)
+                // Calculate offline devices
                 const cutoffDate = new Date();
-                cutoffDate.setDate(cutoffDate.getDate() - 30);
+                cutoffDate.setDate(cutoffDate.getDate() - state.offlineDaysThreshold);
                 const offlineDevices = [];
 
                 for (const ep of data.endpoints) {
@@ -3301,6 +3471,19 @@
                     })
                 });
 
+                // Check upload response
+                if (!uploadResponse.ok) {
+                    const uploadErrorText = await uploadResponse.text();
+                    throw new Error(`Upload failed (HTTP ${uploadResponse.status}): ${uploadErrorText.substring(0, 100)}`);
+                }
+                
+                const uploadContentType = uploadResponse.headers.get('content-type');
+                if (!uploadContentType || !uploadContentType.includes('application/json')) {
+                    const uploadText = await uploadResponse.text();
+                    console.error('Non-JSON upload response:', uploadText.substring(0, 200));
+                    throw new Error('Upload returned non-JSON response.');
+                }
+                
                 const uploadData = await uploadResponse.json();
 
                 if (uploadData.success) {
@@ -3317,9 +3500,12 @@
 
             } catch (err) {
                 showToast(err.message || 'Failed to fetch SentinelOne endpoints', 'error');
+                throw err; // Re-throw so refresh function can catch it
             } finally {
-                s1FetchBtn.classList.remove('loading');
-                s1FetchBtn.disabled = false;
+                if (s1FetchBtn) {
+                    s1FetchBtn.classList.remove('loading');
+                    s1FetchBtn.disabled = false;
+                }
             }
         }
 
@@ -3336,28 +3522,33 @@
             state[`file${fileId}`].uploaded = true;
             state[`file${fileId}`].filename = `${siteName} Endpoints`;
 
-            fileCard.classList.add('uploaded');
-            dropZone.style.display = 'none';
-            fileInfo.classList.add('visible');
+            // Client-selection UI doesn't have file cards/drop zones; guard optional elements.
+            if (fileCard) fileCard.classList.add('uploaded');
+            if (dropZone) dropZone.style.display = 'none';
+            if (fileInfo) fileInfo.classList.add('visible');
 
-            fileNameEl.textContent = `🛡️ ${siteName} Endpoints`;
-            fileMeta.textContent = `${data.row_count} rows • ${data.columns.length} columns`;
+            if (fileNameEl) fileNameEl.textContent = `🛡️ ${siteName} Endpoints`;
+            if (fileMeta) fileMeta.textContent = `${data.row_count} rows • ${data.columns.length} columns`;
 
             // Save as last used source
             console.log(`DEBUG handleSentinelOneUploadSuccess: Calling saveLastSourceConfig with siteId=${siteId}`);
             saveLastSourceConfig(fileId, 'SentinelOne', siteId, siteName);
 
-            sheetSelect.innerHTML = data.sheets.map(sheet =>
-                `<option value="${sheet}">${sheet}</option>`
-            ).join('');
-            sheetSelect.disabled = false;
+            if (sheetSelect) {
+                sheetSelect.innerHTML = data.sheets.map(sheet =>
+                    `<option value="${sheet}">${sheet}</option>`
+                ).join('');
+                sheetSelect.disabled = false;
+            }
 
-            columnSelect.innerHTML = '<option value="">Select a column</option>' +
-                data.columns.map(col => `<option value="${col}">${col}</option>`).join('');
-            columnSelect.disabled = false;
+            if (columnSelect) {
+                columnSelect.innerHTML = '<option value="">Select a column</option>' +
+                    data.columns.map(col => `<option value="${col}">${col}</option>`).join('');
+                columnSelect.disabled = false;
+            }
 
             // Auto-select the column (API data always has just one column)
-            if (data.columns.length === 1) {
+            if (columnSelect && data.columns.length === 1) {
                 columnSelect.value = data.columns[0];
                 state[`file${fileId}`].column = data.columns[0];
                 updateCompareButton();
@@ -3766,7 +3957,7 @@
             state.ninjaDevices = data.devices;
 
             // Calculate offline devices
-            const cutoffTimestamp = (Date.now() / 1000) - (30 * 24 * 60 * 60);
+            const cutoffTimestamp = (Date.now() / 1000) - (state.offlineDaysThreshold * 24 * 60 * 60);
             const offlineDevices = data.devices.filter(dev => {
                 return dev.lastContact && dev.lastContact < cutoffTimestamp;
             }).map(dev => ({
@@ -3797,7 +3988,7 @@
             data.org_id = orgId;
 
             // Calculate offline devices
-            const cutoffTimestamp = (Date.now() / 1000) - (30 * 24 * 60 * 60);
+            const cutoffTimestamp = (Date.now() / 1000) - (state.offlineDaysThreshold * 24 * 60 * 60);
             const offlineDevices = [];
             for (const dev of devices) {
                 if (dev.lastContact && dev.lastContact < cutoffTimestamp) {
@@ -3833,8 +4024,10 @@
         async function fetchNinjaDevices(fileId, orgId = null, orgName = 'All Organizations') {
             const ninjaFetchBtn = document.getElementById(`ninja-fetch-btn-${fileId}`);
 
-            ninjaFetchBtn.classList.add('loading');
-            ninjaFetchBtn.disabled = true;
+            if (ninjaFetchBtn) {
+                ninjaFetchBtn.classList.add('loading');
+                ninjaFetchBtn.disabled = true;
+            }
 
             try {
                 // Fetch devices from NinjaRMM with org_id filtering
@@ -3845,6 +4038,21 @@
                 console.log(`DEBUG: Fetching Ninja Devices. URL: ${url}, Slot: ${fileId}, Org: ${orgName}`);
 
                 const response = await fetch(url);
+                
+                // Check if response is OK
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
+                }
+                
+                // Check content type before parsing
+                const contentTypeNinja = response.headers.get('content-type');
+                if (!contentTypeNinja || !contentTypeNinja.includes('application/json')) {
+                    const text = await response.text();
+                    console.error('Non-JSON response:', text.substring(0, 200));
+                    throw new Error('Server returned non-JSON response. Check API configuration.');
+                }
+                
                 const data = await response.json();
 
                 if (!data.success) {
@@ -3858,8 +4066,8 @@
                 // Cache the fresh data
                 setCache('Ninja', orgId || 'all', orgName, data);
 
-                // Calculate offline devices (> 30 days)
-                const cutoffTimestamp = (Date.now() / 1000) - (30 * 24 * 60 * 60);
+                // Calculate offline devices
+                const cutoffTimestamp = (Date.now() / 1000) - (state.offlineDaysThreshold * 24 * 60 * 60);
                 const offlineDevices = [];
 
                 for (const dev of data.devices) {
@@ -3883,6 +4091,19 @@
                     })
                 });
 
+                // Check upload response
+                if (!uploadResponse.ok) {
+                    const uploadErrorText = await uploadResponse.text();
+                    throw new Error(`Upload failed (HTTP ${uploadResponse.status}): ${uploadErrorText.substring(0, 100)}`);
+                }
+                
+                const uploadContentType = uploadResponse.headers.get('content-type');
+                if (!uploadContentType || !uploadContentType.includes('application/json')) {
+                    const uploadText = await uploadResponse.text();
+                    console.error('Non-JSON upload response:', uploadText.substring(0, 200));
+                    throw new Error('Upload returned non-JSON response.');
+                }
+                
                 const uploadData = await uploadResponse.json();
 
                 if (uploadData.success) {
@@ -3904,9 +4125,12 @@
 
             } catch (err) {
                 showToast(err.message || 'Failed to fetch NinjaRMM devices', 'error');
+                throw err; // Re-throw so refresh function can catch it
             } finally {
-                ninjaFetchBtn.classList.remove('loading');
-                ninjaFetchBtn.disabled = false;
+                if (ninjaFetchBtn) {
+                    ninjaFetchBtn.classList.remove('loading');
+                    ninjaFetchBtn.disabled = false;
+                }
             }
         }
 
@@ -3922,27 +4146,32 @@
             state[`file${fileId}`].uploaded = true;
             state[`file${fileId}`].filename = `${orgName} Devices`;
 
-            fileCard.classList.add('uploaded');
-            dropZone.style.display = 'none';
-            fileInfo.classList.add('visible');
+            // Client-selection UI doesn't have file cards/drop zones; guard optional elements.
+            if (fileCard) fileCard.classList.add('uploaded');
+            if (dropZone) dropZone.style.display = 'none';
+            if (fileInfo) fileInfo.classList.add('visible');
 
-            fileNameEl.textContent = `🥷 ${orgName} Devices`;
-            fileMeta.textContent = `${data.row_count} rows • ${data.columns.length} columns`;
+            if (fileNameEl) fileNameEl.textContent = `🥷 ${orgName} Devices`;
+            if (fileMeta) fileMeta.textContent = `${data.row_count} rows • ${data.columns.length} columns`;
 
             // Save as last used source
             saveLastSourceConfig(fileId, 'NinjaRMM', orgId, orgName);
 
-            sheetSelect.innerHTML = data.sheets.map(sheet =>
-                `<option value="${sheet}">${sheet}</option>`
-            ).join('');
-            sheetSelect.disabled = false;
+            if (sheetSelect) {
+                sheetSelect.innerHTML = data.sheets.map(sheet =>
+                    `<option value="${sheet}">${sheet}</option>`
+                ).join('');
+                sheetSelect.disabled = false;
+            }
 
-            columnSelect.innerHTML = '<option value="">Select a column</option>' +
-                data.columns.map(col => `<option value="${col}">${col}</option>`).join('');
-            columnSelect.disabled = false;
+            if (columnSelect) {
+                columnSelect.innerHTML = '<option value="">Select a column</option>' +
+                    data.columns.map(col => `<option value="${col}">${col}</option>`).join('');
+                columnSelect.disabled = false;
+            }
 
             // Auto-select the column (API data always has just one column)
-            if (data.columns.length === 1) {
+            if (columnSelect && data.columns.length === 1) {
                 columnSelect.value = data.columns[0];
                 state[`file${fileId}`].column = data.columns[0];
                 updateCompareButton();
@@ -4125,6 +4354,34 @@
                     <div class="stat-label">Prefix Matches</div>
                 </div>
             `;
+
+            // Populate refresh button labels with counts
+            const dataSourcesInfo = document.getElementById('data-sources-info');
+            const btn1 = document.getElementById('refresh-data-1');
+            const btn2 = document.getElementById('refresh-data-2');
+            const text1 = document.getElementById('refresh-text-1');
+            const text2 = document.getElementById('refresh-text-2');
+            const canRefresh1 = state.file1.sourceType === 'SentinelOne' || state.file1.sourceType === 'NinjaRMM';
+            const canRefresh2 = state.file2.sourceType === 'SentinelOne' || state.file2.sourceType === 'NinjaRMM';
+
+            if (dataSourcesInfo) {
+                if (canRefresh1 || canRefresh2) {
+                    dataSourcesInfo.style.display = 'flex';
+
+                    if (btn1) btn1.style.display = canRefresh1 ? 'inline-flex' : 'none';
+                    if (btn2) btn2.style.display = canRefresh2 ? 'inline-flex' : 'none';
+
+                    const sourceIcon1 = displayName1 === 'SentinelOne' ? '🛡️' : displayName1 === 'NinjaRMM' ? '🥷' : '📄';
+                    const sourceMeta1 = `${data.stats.unique_file1} ${displayName1 === 'SentinelOne' ? 'endpoints' : 'devices'}`;
+                    if (text1) text1.textContent = `${sourceIcon1} Refresh ${displayName1} (${sourceMeta1})`;
+
+                    const sourceIcon2 = displayName2 === 'SentinelOne' ? '🛡️' : displayName2 === 'NinjaRMM' ? '🥷' : '📄';
+                    const sourceMeta2 = `${data.stats.unique_file2} ${displayName2 === 'SentinelOne' ? 'endpoints' : 'devices'}`;
+                    if (text2) text2.textContent = `${sourceIcon2} Refresh ${displayName2} (${sourceMeta2})`;
+                } else {
+                    dataSourcesInfo.style.display = 'none';
+                }
+            }
 
             // Update tab labels
             const tabBtns = document.querySelectorAll('.tab-btn');
@@ -4487,6 +4744,74 @@
         // Export button
         document.getElementById('export-btn').addEventListener('click', exportToHTML);
 
+        // Refresh data buttons
+        document.getElementById('refresh-data-1').addEventListener('click', async () => {
+            await refreshDataSource(1);
+        });
+
+        document.getElementById('refresh-data-2').addEventListener('click', async () => {
+            await refreshDataSource(2);
+        });
+
+        async function refreshDataSource(fileId) {
+            const btn = document.getElementById(`refresh-data-${fileId}`);
+            const sourceType = state[`file${fileId}`].sourceType;
+            
+            if (!btn) {
+                console.error(`Refresh button not found for file ${fileId}`);
+                showToast('Refresh button not found', 'error');
+                return;
+            }
+            
+            if (!sourceType || (sourceType !== 'SentinelOne' && sourceType !== 'NinjaRMM')) {
+                showToast('Cannot refresh this data source', 'error');
+                return;
+            }
+
+            // Get stored config for this source
+            const savedConfig = localStorage.getItem('lastSourceConfig');
+            if (!savedConfig) {
+                showToast('No saved configuration found', 'error');
+                return;
+            }
+
+            try {
+                const config = JSON.parse(savedConfig);
+                const fileConfig = config[`file${fileId}`];
+                
+                if (!fileConfig) {
+                    showToast('No configuration found for this source', 'error');
+                    return;
+                }
+
+                // Set loading state
+                if (btn) {
+                    btn.classList.add('loading');
+                    btn.disabled = true;
+                }
+
+                if (sourceType === 'SentinelOne') {
+                    showToast('Refreshing SentinelOne data...', 'info');
+                    await fetchSentinelOneEndpoints(fileId, fileConfig.id === 'all' ? null : fileConfig.id, fileConfig.name);
+                } else if (sourceType === 'NinjaRMM') {
+                    showToast('Refreshing NinjaRMM data...', 'info');
+                    await fetchNinjaDevices(fileId, fileConfig.id === 'all' ? null : fileConfig.id, fileConfig.name);
+                }
+
+                // After successful refresh, re-run comparison
+                await runComparison();
+                showToast(`${sourceType} data refreshed successfully!`, 'success');
+            } catch (error) {
+                console.error('Refresh error:', error);
+                showToast(`Failed to refresh ${sourceType} data: ${error.message}`, 'error');
+            } finally {
+                if (btn) {
+                    btn.classList.remove('loading');
+                    btn.disabled = false;
+                }
+            }
+        }
+
         // Export function
         function exportToHTML() {
             const file1Name = state.file1.filename || 'File 1';
@@ -4675,7 +5000,7 @@
         </div>
 
         <div class="section offline-section" style="${offlineHtml.trim() === '' ? 'display: none;' : ''}">
-            <div class="section-title">⚠️ Devices Offline > 30 Days</div>
+            <div class="section-title">⚠️ Devices Offline > ${state.offlineDaysThreshold} Days</div>
             <div class="offline-content">
                 ${offlineHtml}
             </div>
@@ -4948,7 +5273,12 @@
 
         // Cleanup on page unload
         window.addEventListener('beforeunload', () => {
-            fetch('/cleanup', { method: 'POST', keepalive: true });
+            fetch('/cleanup', {
+                method: 'POST',
+                keepalive: true,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csrf_token: csrfToken })
+            });
         });
 
         // ========== REMEDIATION AND SETTINGS ==========
@@ -4969,9 +5299,16 @@
 
         // Load saved remediation script from localStorage
         function loadSavedSettings() {
-            const saved = localStorage.getItem('remediationScriptId');
-            if (saved) {
-                state.remediationScriptId = parseInt(saved);
+            const savedScriptId = localStorage.getItem('remediationScriptId');
+            if (savedScriptId) {
+                state.remediationScriptId = parseInt(savedScriptId);
+            }
+            
+            const savedOfflineDays = localStorage.getItem('offlineDaysThreshold');
+            if (savedOfflineDays) {
+                state.offlineDaysThreshold = parseInt(savedOfflineDays);
+                const select = document.getElementById('offline-days-select');
+                if (select) select.value = savedOfflineDays;
             }
         }
 
@@ -5030,6 +5367,14 @@
                 localStorage.removeItem('remediationScriptId');
                 document.getElementById('settings-script-info').style.display = 'none';
             }
+        });
+
+        // Handle offline days threshold selection
+        document.getElementById('offline-days-select').addEventListener('change', (e) => {
+            const days = parseInt(e.target.value);
+            state.offlineDaysThreshold = days;
+            localStorage.setItem('offlineDaysThreshold', days);
+            showToast(`Offline threshold set to ${days} days`, 'success');
         });
 
         function updateScriptInfo(scriptId) {
