@@ -309,6 +309,20 @@ def _format_ninja_parameters_kv_lines(params: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_ninja_parameters_powershell(params: dict) -> str:
+    # PowerShell-style parameters: -ParamName "value" all on one line
+    parts = []
+    for k, v in (params or {}).items():
+        if v is None:
+            continue
+        # Quote string values, don't quote numbers
+        if isinstance(v, str):
+            parts.append(f'-{k} "{v}"')
+        else:
+            parts.append(f'-{k} {v}')
+    return " ".join(parts)
+
+
 def read_excel_file(filepath):
     """Read Excel file and return dataframe with sheet info."""
     try:
@@ -1425,6 +1439,7 @@ def trigger_ad_inventory():
         # We try multiple parameter encodings and payload shapes to work around tenant-specific quirks.
         param_variants = [
             ('no_params', None),  # Try without parameters first to isolate NPE issue
+            ('powershell', _format_ninja_parameters_powershell(script_params)),  # PowerShell-style: -Days 30 -ClientName "..."
             ('kv_lines', _format_ninja_parameters_kv_lines(script_params)),
             ('json', json.dumps(script_params, separators=(',', ':')))
         ]
