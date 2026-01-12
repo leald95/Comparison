@@ -4,7 +4,7 @@ NinjaRMM PowerShell Script: Active Directory Computer Inventory
 Purpose:
 - Query Active Directory for enabled computer accounts that have been active within the last N days
   using lastLogonTimestamp (replicated, approximate).
-- POST results back to the webapp /ad/intake endpoint.
+- POST results back to the webapp /ad/intake endpoint OR store in a NinjaOne custom field.
 
 Expected parameters (as sent by the webapp):
 - Days (30/60/90)
@@ -14,9 +14,13 @@ Expected parameters (as sent by the webapp):
 - SigningKey (one-time signing key; used to compute X-AD-Intake-Signature)
 - Token (legacy optional; sent as X-AD-Intake-Token)
 
+NinjaOne-only mode parameters:
+- CustomField (name of NinjaOne custom field to store results in)
+
 Notes:
 - Must run on a domain-joined host with RSAT AD module available (or a DC).
 - Uses lastLogonTimestamp which can lag; best used for 30/60/90-day windows.
+- When CustomField is provided, the script operates in NinjaOne-only mode.
 #>
 
 [CmdletBinding()]
@@ -24,20 +28,23 @@ param(
   [Parameter(Mandatory=$true)]
   [int]$Days,
 
-  [Parameter(Mandatory=$true)]
+  [Parameter(Mandatory=$false)]
   [string]$ClientName,
 
-  [Parameter(Mandatory=$true)]
+  [Parameter(Mandatory=$false)]
   [string]$CallbackUrl,
 
-  [Parameter(Mandatory=$true)]
+  [Parameter(Mandatory=$false)]
   [string]$Nonce,
 
-  [Parameter(Mandatory=$true)]
+  [Parameter(Mandatory=$false)]
   [string]$SigningKey,
 
   [Parameter(Mandatory=$false)]
-  [string]$Token
+  [string]$Token,
+
+  [Parameter(Mandatory=$false)]
+  [string]$CustomField
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,17 +55,24 @@ function Fail([string]$Message) {
 }
 
 if ($Days -notin @(30,60,90)) { Fail "Days must be one of: 30, 60, 90" }
-if ([string]::IsNullOrWhiteSpace($ClientName)) { Fail "ClientName is required" }
-if ([string]::IsNullOrWhiteSpace($CallbackUrl)) { Fail "CallbackUrl is required" }
-if ([string]::IsNullOrWhiteSpace($Nonce)) { Fail "Nonce is required" }
-if ([string]::IsNullOrWhiteSpace($SigningKey)) { Fail "SigningKey is required" }
 
-try {
-  # Ensure URL is sane
-  $u = [Uri]$CallbackUrl
-  if ($u.Scheme -notin @('http','https')) { Fail "CallbackUrl must be http/https" }
-} catch {
-  Fail "CallbackUrl is not a valid URI"
+# Validate webhook parameters only if CustomField is not provided
+if ([string]::IsNullOrWhiteSpace($CustomField)) {
+  if ([string]::IsNullOrWhiteSpace($ClientName)) { Fail "ClientName is required when CustomField is not provided" }
+  if ([string]::IsNullOrWhiteSpace($CallbackUrl)) { Fail "CallbackUrl is required when CustomField is not provided" }
+  if ([string]::IsNullOrWhiteSpace($Nonce)) { Fail "Nonce is required when CustomField is not provided" }
+  if ([string]::IsNullOrWhiteSpace($SigningKey)) { Fail "SigningKey is required when CustomField is not provided" }
+}
+
+# Validate CallbackUrl if provided
+if (-not [string]::IsNullOrWhiteSpace($CallbackUrl)) {
+  try {
+    # Ensure URL is sane
+    $u = [Uri]$CallbackUrl
+    if ($u.Scheme -notin @('http','https')) { Fail "CallbackUrl must be http/https" }
+  } catch {
+    Fail "CallbackUrl is not a valid URI"
+  }
 }
 
 # Try to load AD module
@@ -128,26 +142,39 @@ $payload = [pscustomobject]@{
 
 $json = $payload | ConvertTo-Json -Depth 6
 
-$hmac = New-Object System.Security.Cryptography.HMACSHA256 ([Text.Encoding]::UTF8.GetBytes($SigningKey))
-$sigBytes = $hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($json))
-$signature = ($sigBytes | ForEach-Object { $_.ToString('x2') }) -join ''
-
-$headers = @{ 
-  'X-AD-Intake-Nonce' = $Nonce
-  'X-AD-Intake-Signature' = $signature
+# If CustomField is provided, set the NinjaOne custom field
+if (-not [string]::IsNullOrWhiteSpace($CustomField)) {
+  try {
+    Ninja-Property-Set $CustomField $json
+    Write-Host "AD inventory stored in NinjaOne custom field '$CustomField': $($results.Count) computers (>= $Days days)"
+  } catch {
+    Fail "Failed to set NinjaOne custom field '$CustomField': $($_.Exception.Message)"
+  }
 }
 
-# Legacy optional header
-if (-not [string]::IsNullOrWhiteSpace($Token)) {
-  $headers['X-AD-Intake-Token'] = $Token
-}
+# If CallbackUrl and SigningKey are provided, POST to the webhook
+if (-not [string]::IsNullOrWhiteSpace($CallbackUrl) -and -not [string]::IsNullOrWhiteSpace($SigningKey)) {
+  $hmac = New-Object System.Security.Cryptography.HMACSHA256 ([Text.Encoding]::UTF8.GetBytes($SigningKey))
+  $sigBytes = $hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($json))
+  $signature = ($sigBytes | ForEach-Object { $_.ToString('x2') }) -join ''
 
-try {
-  # If your environment has strict TLS defaults, uncomment the next line:
-  # [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  $headers = @{ 
+    'X-AD-Intake-Nonce' = $Nonce
+    'X-AD-Intake-Signature' = $signature
+  }
 
-  Invoke-RestMethod -Method POST -Uri $CallbackUrl -Headers $headers -ContentType 'application/json' -Body $json -TimeoutSec 60 | Out-Null
-  Write-Host "AD inventory sent successfully: $($results.Count) computers (>= $Days days)"
-} catch {
-  Fail "Failed to POST to CallbackUrl: $($_.Exception.Message)"
+  # Legacy optional header
+  if (-not [string]::IsNullOrWhiteSpace($Token)) {
+    $headers['X-AD-Intake-Token'] = $Token
+  }
+
+  try {
+    # If your environment has strict TLS defaults, uncomment the next line:
+    # [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+    Invoke-RestMethod -Method POST -Uri $CallbackUrl -Headers $headers -ContentType 'application/json' -Body $json -TimeoutSec 60 | Out-Null
+    Write-Host "AD inventory sent successfully: $($results.Count) computers (>= $Days days)"
+  } catch {
+    Fail "Failed to POST to CallbackUrl: $($_.Exception.Message)"
+  }
 }
