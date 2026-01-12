@@ -1397,8 +1397,9 @@ def trigger_ad_inventory():
     callback_url = (os.getenv('AD_CALLBACK_URL') or '').strip() or (request.host_url.rstrip('/') + '/ad/intake')
 
     # Parameters are passed through to Ninja; your script should accept these.
-    # Clean client name: remove extra whitespace, newlines, normalize to single line
-    clean_client = ' '.join(client.split())
+    # Clean client name: remove emojis/non-ASCII, extra whitespace, newlines
+    clean_client = ' '.join(client.split())  # Remove extra whitespace/newlines first
+    clean_client = clean_client.encode('ascii', 'ignore').decode('ascii').strip()  # Remove emojis/non-ASCII
     script_params = {
         'Days': days,
         'ClientName': clean_client,
@@ -1407,13 +1408,16 @@ def trigger_ad_inventory():
         'SigningKey': signing_key,
     }
 
-    logger.info('Triggering AD inventory via Ninja: client=%s days=%s device_id=%s script_id=%s', client, days, device_id, script_id)
+    if client != clean_client:
+        logger.info('Client name sanitized: "%s" -> "%s"', client, clean_client)
+    logger.info('Triggering AD inventory via Ninja: client=%s days=%s device_id=%s script_id=%s', clean_client, days, device_id, script_id)
 
     try:
         headers, auth = _get_ninja_auth(api_url)
         headers = {**headers, 'Content-Type': 'application/json'}
 
         script_uid = _lookup_ninja_script_uid(api_url, headers, auth, script_id)
+        logger.info('Script UID lookup: script_id=%s uid=%s', script_id, script_uid)
 
         run_as = (os.getenv('NINJARMM_SCRIPT_RUN_AS') or '').strip()
 
@@ -1430,15 +1434,16 @@ def trigger_ad_inventory():
             f'{api_url}/v2/device/{device_id}/script/run',
         ]
 
-        # Simplified: just use id + type + parameters (confirmed working pattern)
-        id_variants = [('id', {'id': script_id})]
+        # Try multiple ID field combinations (some tenants require uid, some accept id)
+        id_variants = []
         if script_uid:
+            # If we have uid, try it first with and without id
             id_variants.extend([
                 ('uid', {'uid': script_uid}),
-                ('scriptUid', {'scriptUid': script_uid}),
                 ('id+uid', {'id': script_id, 'uid': script_uid}),
-                ('id+scriptUid', {'id': script_id, 'scriptUid': script_uid}),
             ])
+        # Always try plain id (fallback)
+        id_variants.append(('id', {'id': script_id}))
 
         last_resp = None
         last_variant = None
