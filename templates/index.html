@@ -2190,6 +2190,18 @@
                 <div style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.9rem;">
                     AD inventory: <span id="ad-status-text-results">Not fetched</span>
                 </div>
+                
+                <!-- AD Fetch Progress Indicator (Results Page) -->
+                <div id="ad-fetch-progress-results" style="display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 10px; max-width: 500px; margin-left: auto; margin-right: auto;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <div class="spinner" style="width: 20px; height: 20px; border-width: 3px;"></div>
+                        <div>
+                            <div id="ad-progress-message-results" style="color: var(--text-primary); font-weight: 600; margin-bottom: 0.25rem;">Triggering AD inventory script...</div>
+                            <div id="ad-progress-details-results" style="font-size: 0.85rem; color: var(--text-secondary);">Please wait while we collect Active Directory data</div>
+                        </div>
+                    </div>
+                </div>
+                
                 <button type="button" class="history-btn" id="fetch-ad-btn-results">🧩 Fetch AD</button>
                 <button type="button" class="history-btn" id="sync-ad-btn-results"
                     title="Sync latest data already in Ninja custom fields">📥 Sync Current AD</button>
@@ -5887,19 +5899,26 @@
             ].filter(Boolean);
             btns.forEach(b => { b.disabled = true; b.classList.add('loading'); });
 
-            // Show progress indicator
+            // Show progress indicators (both main page and results page)
             const progressDiv = document.getElementById('ad-fetch-progress');
             const progressMsg = document.getElementById('ad-progress-message');
             const progressDetails = document.getElementById('ad-progress-details');
-            if (progressDiv) {
-                progressDiv.style.display = 'block';
-                if (options.syncOnly) {
-                    progressMsg.textContent = 'Syncing AD inventory from Ninja custom fields...';
-                    progressDetails.textContent = 'Retrieving cached Active Directory data';
-                } else {
-                    progressMsg.textContent = 'Triggering AD inventory script...';
-                    progressDetails.textContent = 'Please wait while we collect Active Directory data';
-                }
+            const progressDivResults = document.getElementById('ad-fetch-progress-results');
+            const progressMsgResults = document.getElementById('ad-progress-message-results');
+            const progressDetailsResults = document.getElementById('ad-progress-details-results');
+            
+            const progressDivs = [progressDiv, progressDivResults].filter(Boolean);
+            const progressMsgs = [progressMsg, progressMsgResults].filter(Boolean);
+            const progressDetailsList = [progressDetails, progressDetailsResults].filter(Boolean);
+            
+            progressDivs.forEach(div => div.style.display = 'block');
+            
+            if (options.syncOnly) {
+                progressMsgs.forEach(msg => msg.textContent = 'Syncing AD inventory from Ninja custom fields...');
+                progressDetailsList.forEach(detail => detail.textContent = 'Retrieving cached Active Directory data');
+            } else {
+                progressMsgs.forEach(msg => msg.textContent = 'Triggering AD inventory script...');
+                progressDetailsList.forEach(detail => detail.textContent = 'Please wait while we collect Active Directory data');
             }
 
             try {
@@ -5968,10 +5987,8 @@
                 showToast(err.message || 'AD inventory failed', 'error');
             } finally {
                 btns.forEach(b => { b.disabled = false; b.classList.remove('loading'); });
-                // Hide progress indicator
-                if (progressDiv) {
-                    progressDiv.style.display = 'none';
-                }
+                // Hide both progress indicators
+                progressDivs.forEach(div => div.style.display = 'none');
             }
         }
 
