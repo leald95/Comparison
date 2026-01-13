@@ -2377,6 +2377,15 @@
                         <div style="margin-bottom: 0.75rem; color: var(--text-secondary); font-size: 0.9rem;">
                             AD inventory: <span id="ad-status-text">Not fetched</span>
                         </div>
+                        <div id="ad-fetch-progress" style="display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 10px; max-width: 500px; margin-left: auto; margin-right: auto;">
+                            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                <div class="spinner" style="width: 20px; height: 20px; border-width: 3px;"></div>
+                                <div>
+                                    <div id="ad-progress-message" style="color: var(--text-primary); font-weight: 600; margin-bottom: 0.25rem;">Triggering AD inventory script...</div>
+                                    <div id="ad-progress-details" style="font-size: 0.85rem; color: var(--text-secondary);">Please wait while we collect Active Directory data</div>
+                                </div>
+                            </div>
+                        </div>
                         <div style="display:flex; gap:0.75rem; justify-content:center; flex-wrap:wrap;">
                             <button type="button" class="select-client-main-btn" id="fetch-ad-btn">
                                 <span class="btn-text">🧩 Fetch AD</span>
@@ -5878,8 +5887,36 @@
             ].filter(Boolean);
             btns.forEach(b => { b.disabled = true; b.classList.add('loading'); });
 
+            // Show progress indicator
+            const progressDiv = document.getElementById('ad-fetch-progress');
+            const progressMsg = document.getElementById('ad-progress-message');
+            const progressDetails = document.getElementById('ad-progress-details');
+            if (progressDiv) {
+                progressDiv.style.display = 'block';
+                if (options.syncOnly) {
+                    progressMsg.textContent = 'Syncing AD inventory from Ninja custom fields...';
+                    progressDetails.textContent = 'Retrieving cached Active Directory data';
+                } else {
+                    progressMsg.textContent = 'Triggering AD inventory script...';
+                    progressDetails.textContent = 'Please wait while we collect Active Directory data';
+                }
+            }
+
             try {
                 const endpoint = options.syncOnly ? '/ad/sync' : '/ad/trigger';
+
+                // Update progress for script execution
+                if (!options.syncOnly && progressMsg) {
+                    setTimeout(() => {
+                        progressMsg.textContent = 'Script running on domain controller...';
+                        progressDetails.textContent = 'Querying Active Directory for computer accounts';
+                    }, 2000);
+                    setTimeout(() => {
+                        progressMsg.textContent = 'Waiting for results...';
+                        progressDetails.textContent = 'Polling for inventory data from custom field';
+                    }, 5000);
+                }
+
                 const triggerResp = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -5931,6 +5968,10 @@
                 showToast(err.message || 'AD inventory failed', 'error');
             } finally {
                 btns.forEach(b => { b.disabled = false; b.classList.remove('loading'); });
+                // Hide progress indicator
+                if (progressDiv) {
+                    progressDiv.style.display = 'none';
+                }
             }
         }
 
