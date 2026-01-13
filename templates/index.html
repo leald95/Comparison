@@ -924,6 +924,11 @@
             font-size: 0.75rem;
         }
 
+        .value-tag.ad {
+            border-color: var(--accent-violet);
+            background: rgba(139, 92, 246, 0.1);
+        }
+
         .value-tag.prefix {
             border-color: var(--accent-violet);
             background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(139, 92, 246, 0.1) 100%);
@@ -1104,8 +1109,13 @@
         }
 
         @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         @media (max-width: 768px) {
@@ -2129,11 +2139,12 @@
 
     <div class="container">
         <header>
-            <div class="logo">
+            <div class="logo" style="cursor: pointer;" onclick="returnToClientSelection()" title="Return to Client Selection">
                 <div class="logo-icon">🔄</div>
                 <h1>Endpoint Comparison Tool</h1>
             </div>
-            <p class="subtitle">Compare SentinelOne and NinjaRMM endpoints to identify discrepancies across platforms</p>
+            <p class="subtitle">Compare SentinelOne and NinjaRMM endpoints to identify discrepancies across platforms
+            </p>
             <div class="header-actions">
                 <button type="button" class="quick-load-btn" id="quick-load-btn">
                     <span>⚡ Load Last Sources</span>
@@ -2180,6 +2191,8 @@
                     AD inventory: <span id="ad-status-text-results">Not fetched</span>
                 </div>
                 <button type="button" class="history-btn" id="fetch-ad-btn-results">🧩 Fetch AD</button>
+                <button type="button" class="history-btn" id="sync-ad-btn-results"
+                    title="Sync latest data already in Ninja custom fields">📥 Sync Current AD</button>
             </div>
 
             <div class="export-btn-container">
@@ -2204,6 +2217,10 @@
                 <button class="tab-btn" data-tab="prefix-matches">
                     🔗 Prefix Matches
                     <span class="tab-count" id="tab-count-prefix">0</span>
+                </button>
+                <button class="tab-btn" data-tab="only-ad" id="tab-btn-ad" style="display: none;">
+                    🧩 Only in AD
+                    <span class="tab-count" id="tab-count-ad">0</span>
                 </button>
                 <button class="tab-btn" data-tab="testing-view">
                     🧪 Testing View
@@ -2239,6 +2256,17 @@
                 </div>
             </div>
 
+            <div class="tab-content" id="tab-only-ad">
+                <div class="data-table-container">
+                    <div class="prefix-match-explanation">
+                        <span class="info-icon">ℹ️</span>
+                        <p>These computers are in Active Directory but were not found in either SentinelOne or NinjaRMM.
+                        </p>
+                    </div>
+                    <div class="value-list" id="only-ad-list"></div>
+                </div>
+            </div>
+
             <div class="tab-content" id="tab-testing-view">
                 <div class="testing-view-container">
                     <div class="testing-search-wrapper">
@@ -2253,6 +2281,7 @@
                                     <th data-sort="name" id="testing-header-name">Device Name</th>
                                     <th data-sort="file1" id="testing-header-file1">Source 1 Status</th>
                                     <th data-sort="file2" id="testing-header-file2">Source 2 Status</th>
+                                    <th data-sort="inAd" id="testing-header-ad" style="display: none;">In AD</th>
                                     <th>Remediation</th>
                                 </tr>
                             </thead>
@@ -2283,7 +2312,8 @@
             <div class="client-selection-card">
                 <div class="card-header">
                     <h2 class="card-title">📊 Select Client to Compare</h2>
-                    <p class="card-subtitle">Choose a client to automatically compare data from both SentinelOne and NinjaRMM</p>
+                    <p class="card-subtitle">Choose a client to automatically compare data from both SentinelOne and
+                        NinjaRMM</p>
                 </div>
 
                 <div class="client-selector-prompt" id="client-selector-prompt">
@@ -2300,7 +2330,8 @@
                             <span class="client-icon-large">👤</span>
                             <span id="selected-client-name">Client Name</span>
                         </div>
-                        <button type="button" class="change-client-main-btn" id="change-client-main-btn">Change Client</button>
+                        <button type="button" class="change-client-main-btn" id="change-client-main-btn">Change
+                            Client</button>
                     </div>
 
                     <div class="comparison-status" id="comparison-status">
@@ -2350,9 +2381,14 @@
                             <button type="button" class="select-client-main-btn" id="fetch-ad-btn">
                                 <span class="btn-text">🧩 Fetch AD</span>
                             </button>
-                            <button type="button" class="history-btn" id="compare-s1-ad-btn" disabled>Compare S1 vs AD</button>
-                            <button type="button" class="history-btn" id="compare-ninja-ad-btn" disabled>Compare Ninja vs AD</button>
-                            <button type="button" class="history-btn" id="compare-primary-btn" style="display:none;">Compare S1 vs Ninja</button>
+                            <button type="button" class="history-btn" id="sync-ad-btn"
+                                title="Sync latest data already in Ninja custom fields">📥 Sync Current AD</button>
+                            <button type="button" class="history-btn" id="compare-s1-ad-btn" disabled>Compare S1 vs
+                                AD</button>
+                            <button type="button" class="history-btn" id="compare-ninja-ad-btn" disabled>Compare Ninja
+                                vs AD</button>
+                            <button type="button" class="history-btn" id="compare-primary-btn"
+                                style="display:none;">Compare S1 vs Ninja</button>
                         </div>
                     </div>
                 </div>
@@ -2419,6 +2455,12 @@
                 <h2 class="modal-title">Select Client</h2>
                 <button type="button" class="modal-close" id="unified-client-modal-close">✕</button>
             </div>
+            <div style="padding: 0 2rem 1rem 2rem;">
+                <input type="text" id="client-search-input" placeholder="🔍 Search clients..." 
+                    style="width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-deep); color: var(--text-primary); font-size: 0.95rem; font-family: 'Outfit', sans-serif; outline: none; transition: all 0.2s ease;"
+                    onfocus="this.style.borderColor='var(--primary)'; this.style.boxShadow='0 0 0 3px rgba(139, 92, 246, 0.1)'"
+                    onblur="this.style.borderColor='var(--border-subtle)'; this.style.boxShadow='none'">
+            </div>
             <div id="unified-client-modal-content">
                 <div class="modal-loading">
                     <div class="spinner"></div>
@@ -2454,7 +2496,8 @@
                         ⏱️ Offline Threshold
                     </div>
                     <div class="settings-section-desc">
-                        Define how many days without contact should mark a device as offline. This applies to both SentinelOne and NinjaRMM.
+                        Define how many days without contact should mark a device as offline. This applies to both
+                        SentinelOne and NinjaRMM.
                     </div>
                     <div class="settings-select-wrapper">
                         <select id="offline-days-select" class="settings-select">
@@ -2466,7 +2509,8 @@
                         </select>
                     </div>
                     <div class="settings-info">
-                        💡 <strong>Tip:</strong> Devices that haven't contacted their respective service in more than the specified days will be flagged as offline in the comparison results.
+                        💡 <strong>Tip:</strong> Devices that haven't contacted their respective service in more than
+                        the specified days will be flagged as offline in the comparison results.
                     </div>
                 </div>
 
@@ -2475,7 +2519,8 @@
                         🛠️ SentinelOne Remediation Script
                     </div>
                     <div class="settings-section-desc">
-                        Select the NinjaRMM script to run when SentinelOne needs to be installed or repaired on a device.
+                        Select the NinjaRMM script to run when SentinelOne needs to be installed or repaired on a
+                        device.
                     </div>
                     <div class="settings-select-wrapper">
                         <select id="remediation-script-select" class="settings-select">
@@ -2487,7 +2532,8 @@
                         <span id="settings-script-details"></span>
                     </div>
                     <div class="settings-warning">
-                        ⚠️ <strong>Note:</strong> The remediation script will only run on devices that are currently online in NinjaRMM (last contact within 5 minutes).
+                        ⚠️ <strong>Note:</strong> The remediation script will only run on devices that are currently
+                        online in NinjaRMM (last contact within 5 minutes).
                     </div>
                 </div>
 
@@ -2496,7 +2542,8 @@
                         🧩 Active Directory Inventory (via Ninja)
                     </div>
                     <div class="settings-section-desc">
-                        Configure the NinjaRMM script/device used to query Active Directory and send back a list of computers active within the last 30/60/90 days.
+                        Configure the NinjaRMM script/device used to query Active Directory and send back a list of
+                        computers active within the last 30/60/90 days.
                     </div>
 
                     <div class="settings-select-wrapper">
@@ -2511,7 +2558,6 @@
                         <select id="ad-device-select" class="settings-select">
                             <option value="">Loading devices...</option>
                         </select>
-                        <div id="ad-device-status" style="font-size: 0.85rem; margin-top: 0.25rem; color: var(--text-muted);"></div>
                     </div>
 
                     <div class="settings-select-wrapper" style="margin-top: 0.75rem;">
@@ -2521,12 +2567,15 @@
                     </div>
 
                     <div class="settings-select-wrapper" style="margin-top: 0.75rem; display:flex; gap:0.5rem;">
-                        <button type="button" class="history-btn" id="ad-generate-token-btn">Generate intake token</button>
-                        <input id="ad-generated-token" class="settings-select" type="text" readonly placeholder="Token will appear here (copy to .env)" />
+                        <button type="button" class="history-btn" id="ad-generate-token-btn">Generate intake
+                            token</button>
+                        <input id="ad-generated-token" class="settings-select" type="text" readonly
+                            placeholder="Token will appear here (copy to .env)" />
                     </div>
 
                     <div class="settings-warning">
-                        ⚠️ <strong>Note:</strong> The selected device must have AD query capability (e.g., DC with RSAT/AD module). The webapp will trigger the script and wait for it to POST results back.
+                        ⚠️ <strong>Note:</strong> The selected device must have AD query capability (e.g., DC with
+                        RSAT/AD module). The webapp will trigger the script and wait for it to POST results back.
                     </div>
                 </div>
             </div>
@@ -2542,15 +2591,64 @@
             </div>
             <div class="modal-content" style="padding: 2rem;">
                 <div class="settings-section">
-                    <div class="settings-section-title">📜 Ninja Scripts (IDs)</div>
-                    <div class="settings-section-desc">Use the ID in Settings → AD Script. Click a row to copy the script ID.</div>
-                    <div id="debug-scripts" style="margin-top: 0.75rem;"></div>
+                    <div class="settings-section-title" onclick="toggleDebugSection('scripts')" style="cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center;">
+                        <span>📜 Ninja Scripts (IDs)</span>
+                        <span id="debug-scripts-toggle" style="transition: transform 0.2s;">▼</span>
+                    </div>
+                    <div class="settings-section-desc">Use the ID in Settings → AD Script. Click a row to copy the
+                        script ID.</div>
+                    <div id="debug-scripts-content" style="margin-top: 0.75rem; display: none;">
+                        <div id="debug-scripts"></div>
+                    </div>
                 </div>
 
                 <div class="settings-section">
-                    <div class="settings-section-title">💻 Ninja Devices (IDs)</div>
-                    <div class="settings-section-desc">Use the device ID of your DC/AD query host in Settings → AD Device ID. Click a row to copy the device ID (requires you loaded Ninja devices for a client).</div>
-                    <div id="debug-devices" style="margin-top: 0.75rem;"></div>
+                    <div class="settings-section-title" onclick="toggleDebugSection('devices')" style="cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center;">
+                        <span>💻 Ninja Devices (IDs)</span>
+                        <span id="debug-devices-toggle" style="transition: transform 0.2s;">▼</span>
+                    </div>
+                    <div class="settings-section-desc">Use the device ID of your DC/AD query host in Settings → AD
+                        Device ID. Click a row to copy the device ID (requires you loaded Ninja devices for a client).
+                    </div>
+                    <div id="debug-devices-content" style="margin-top: 0.75rem; display: none;">
+                        <div id="debug-devices"></div>
+                    </div>
+                </div>
+
+                <hr style="border: 0; border-top: 1px solid var(--border-subtle); margin: 2rem 0;">
+
+                <div class="settings-section">
+                    <div class="settings-section-title">🔍 Inspect Custom Field</div>
+                    <div class="settings-section-desc">Manually pull raw data from any Ninja organization or device
+                        custom field.</div>
+
+                    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem;">
+                        <input type="text" id="debug-inspect-id" class="settings-select"
+                            style="flex: 1; min-width: 120px;" placeholder="ID (e.g. 123)">
+                        <select id="debug-inspect-type" class="settings-select" style="width: auto;">
+                            <option value="org">Organization</option>
+                            <option value="device">Device</option>
+                        </select>
+                        <input type="text" id="debug-inspect-field" class="settings-select"
+                            style="flex: 1; min-width: 150px;" placeholder="Field Name" value="ADInventoryJson">
+                        <div style="display:flex; gap:0.5rem; width:100%;">
+                            <button type="button" class="history-btn" id="debug-inspect-btn"
+                                style="flex:1; background: var(--gradient-primary); color: white; border: none;">
+                                Inspect Field
+                            </button>
+                            <button type="button" class="history-btn" id="debug-list-fields-btn"
+                                style="flex:1; background: rgba(6, 182, 212, 0.1); color: var(--accent-cyan); border: 1px solid rgba(6, 182, 212, 0.3);">
+                                List All Fields
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="debug-inspect-result" style="margin-top: 1rem; display: none;">
+                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;"
+                            id="debug-inspect-label">Raw Result:</div>
+                        <pre id="debug-inspect-output"
+                            style="background: var(--bg-deep); padding: 1rem; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; overflow: auto; max-height: 400px; white-space: pre-wrap; word-break: break-all; border: 1px solid var(--border-subtle);"></pre>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2637,7 +2735,7 @@
                         } else {
                             buttonText += "Load Last Source";
                         }
-                        
+
                         btn.querySelector('span').textContent = buttonText;
 
                         // Set tooltip/title
@@ -2693,20 +2791,20 @@
             const key = `api_cache_${source}_${id}`;
             const cached = localStorage.getItem(key);
             if (!cached) return null;
-            
+
             try {
                 const data = JSON.parse(cached);
                 const age = Date.now() - data.timestamp;
                 const maxAge = 3600000; // 1 hour TTL
-                
+
                 // Validate cache age
                 if (age > maxAge) {
-                    console.log(`Cache expired for ${key} (age: ${Math.round(age/60000)}min)`);
+                    console.log(`Cache expired for ${key} (age: ${Math.round(age / 60000)}min)`);
                     localStorage.removeItem(key);
                     return null;
                 }
-                
-                console.log(`Cache hit for ${key} (age: ${Math.round(age/60000)}min)`);
+
+                console.log(`Cache hit for ${key} (age: ${Math.round(age / 60000)}min)`);
                 return data;
             } catch (e) {
                 console.error('Cache parse error:', e);
@@ -2722,16 +2820,16 @@
                 name: name,
                 data: data
             };
-            
+
             // Manage cache size - limit to 50 entries
             const maxEntries = 50;
             const cacheKeys = Object.keys(localStorage).filter(k => k.startsWith('api_cache_'));
-            
+
             if (cacheKeys.length >= maxEntries) {
                 // Remove oldest cache entry
                 let oldestKey = null;
                 let oldestTime = Date.now();
-                
+
                 cacheKeys.forEach(k => {
                     try {
                         const item = JSON.parse(localStorage.getItem(k));
@@ -2744,13 +2842,13 @@
                         localStorage.removeItem(k);
                     }
                 });
-                
+
                 if (oldestKey) {
                     console.log(`Removing oldest cache entry: ${oldestKey}`);
                     localStorage.removeItem(oldestKey);
                 }
             }
-            
+
             try {
                 localStorage.setItem(key, JSON.stringify(cacheObj));
                 console.log(`Cache saved for ${key}`);
@@ -2776,14 +2874,14 @@
             localStorage.removeItem(key);
             console.log(`Cache cleared for ${key}`);
         }
-        
+
         // Clear all expired cache entries on page load
         function pruneExpiredCache() {
             const maxAge = 3600000; // 1 hour
             const now = Date.now();
             const cacheKeys = Object.keys(localStorage).filter(k => k.startsWith('api_cache_'));
             let pruned = 0;
-            
+
             cacheKeys.forEach(key => {
                 try {
                     const item = JSON.parse(localStorage.getItem(key));
@@ -2797,7 +2895,7 @@
                     pruned++;
                 }
             });
-            
+
             if (pruned > 0) {
                 console.log(`Pruned ${pruned} expired/corrupted cache entries`);
             }
@@ -2836,6 +2934,68 @@
         function toggleOfflineSection() {
             const offlineSection = document.getElementById('offline-section');
             offlineSection.classList.toggle('collapsed');
+        }
+
+        // Toggle debug sections (collapsible)
+        function toggleDebugSection(section) {
+            const content = document.getElementById(`debug-${section}-content`);
+            const toggle = document.getElementById(`debug-${section}-toggle`);
+            
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                toggle.style.transform = 'rotate(180deg)';
+            } else {
+                content.style.display = 'none';
+                toggle.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // Return to client selection (from header title click)
+        function returnToClientSelection() {
+            const resultsSection = document.getElementById('results-section');
+            const uploadSection = document.querySelector('.upload-section');
+            
+            if (resultsSection && resultsSection.classList.contains('visible')) {
+                // Hide results
+                resultsSection.classList.remove('visible');
+                
+                // Show upload section
+                if (uploadSection) uploadSection.style.display = 'flex';
+                
+                // Reset to client selection view
+                document.getElementById('client-selector-prompt').style.display = 'block';
+                document.getElementById('selected-client-display').style.display = 'none';
+                
+                // Clear state
+                state.file1.uploaded = false;
+                state.file2.uploaded = false;
+                state.clientName = null;
+                
+                updateQuickLoadButton();
+            }
+        }
+
+        // Client search functionality
+        function setupClientSearch() {
+            const searchInput = document.getElementById('client-search-input');
+            if (!searchInput) return;
+            
+            searchInput.addEventListener('input', (e) => {
+                const searchTerm = e.target.value.toLowerCase().trim();
+                const clientItems = document.querySelectorAll('#unified-client-modal-content .site-item');
+                
+                clientItems.forEach(item => {
+                    const clientName = item.querySelector('.site-name').textContent.toLowerCase();
+                    if (clientName.includes(searchTerm)) {
+                        item.style.display = '';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+            });
+            
+            // Clear search when modal opens
+            searchInput.value = '';
         }
 
         function formatLastSeen(dateStr) {
@@ -2954,7 +3114,7 @@
                 const displayName2 = state.file2.sourceType ||
                     (state.file2.filename?.includes('Devices') ? 'NinjaRMM' : 'File 2');
 
-                const title = clientName 
+                const title = clientName
                     ? `${clientName} - ${displayName1} vs ${displayName2}`
                     : `${displayName1} vs ${displayName2}`;
 
@@ -2967,11 +3127,11 @@
                     const currentSource1 = (state.file1.sourceType || '').trim();
                     const itemSource2 = (item.file2Source || '').trim();
                     const currentSource2 = (state.file2.sourceType || '').trim();
-                    
+
                     // Match by client name and source types
                     return itemClient === currentClient &&
-                           itemSource1 === currentSource1 &&
-                           itemSource2 === currentSource2;
+                        itemSource1 === currentSource1 &&
+                        itemSource2 === currentSource2;
                 };
 
                 // Remove any duplicate entries (update instead of duplicate)
@@ -3030,19 +3190,19 @@
             try {
                 let history = getHistory();
                 const seen = new Map(); // key: "clientName|source1|source2", value: most recent entry
-                
+
                 history.forEach(item => {
                     const key = `${(item.clientName || '').trim()}|${(item.file1Source || '').trim()}|${(item.file2Source || '').trim()}`;
                     const existing = seen.get(key);
-                    
+
                     if (!existing || item.timestamp > existing.timestamp) {
                         seen.set(key, item);
                     }
                 });
-                
+
                 // Convert back to array, sorted by timestamp descending
                 const cleaned = Array.from(seen.values()).sort((a, b) => b.timestamp - a.timestamp);
-                
+
                 if (cleaned.length < history.length) {
                     localStorage.setItem('comparisonHistory', JSON.stringify(cleaned));
                     console.log(`Cleaned ${history.length - cleaned.length} duplicate history entries`);
@@ -3113,11 +3273,11 @@
 
             container.innerHTML = history.map(item => {
                 // Get service names from stored source types or infer from filenames
-                const source1 = item.file1Source || 
+                const source1 = item.file1Source ||
                     (item.file1Name?.includes('Endpoints') ? 'SentinelOne' : 'S1');
-                const source2 = item.file2Source || 
+                const source2 = item.file2Source ||
                     (item.file2Name?.includes('Devices') ? 'NinjaRMM' : 'Ninja');
-                
+
                 return `
                     <div class="history-item">
                         <div class="history-item-header">
@@ -3521,7 +3681,7 @@
 
             const fetchBtn = document.getElementById('site-fetch-fresh');
             const loadBtn = document.getElementById('site-load-cached');
-            
+
             // Disable buttons and show loading
             fetchBtn.disabled = true;
             loadBtn.disabled = true;
@@ -3529,7 +3689,7 @@
 
             document.getElementById('site-cache-prompt').classList.remove('visible');
             const fileId = state.currentFileIdForS1;
-            
+
             try {
                 await executeS1Fetch(choice.id, choice.name, fileId);
             } finally {
@@ -3608,13 +3768,13 @@
                 console.log(`DEBUG: Fetching S1 Endpoints. URL: ${url}, Slot: ${fileId}, Site: ${siteName}`);
 
                 const response = await fetch(url);
-                
+
                 // Check if response is OK
                 if (!response.ok) {
                     const errorText = await response.text();
                     throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
                 }
-                
+
                 // Check content type before parsing
                 const contentTypeS1 = response.headers.get('content-type');
                 if (!contentTypeS1 || !contentTypeS1.includes('application/json')) {
@@ -3622,7 +3782,7 @@
                     console.error('Non-JSON response:', text.substring(0, 200));
                     throw new Error('Server returned non-JSON response. Check API configuration.');
                 }
-                
+
                 const data = await response.json();
 
                 if (!data.success) {
@@ -3668,14 +3828,14 @@
                     const uploadErrorText = await uploadResponse.text();
                     throw new Error(`Upload failed (HTTP ${uploadResponse.status}): ${uploadErrorText.substring(0, 100)}`);
                 }
-                
+
                 const uploadContentType = uploadResponse.headers.get('content-type');
                 if (!uploadContentType || !uploadContentType.includes('application/json')) {
                     const uploadText = await uploadResponse.text();
                     console.error('Non-JSON upload response:', uploadText.substring(0, 200));
                     throw new Error('Upload returned non-JSON response.');
                 }
-                
+
                 const uploadData = await uploadResponse.json();
 
                 if (uploadData.success) {
@@ -3921,7 +4081,7 @@
 
             const fetchBtn = document.getElementById('ninja-fetch-fresh');
             const loadBtn = document.getElementById('ninja-load-cached');
-            
+
             // Disable buttons and show loading
             fetchBtn.disabled = true;
             loadBtn.disabled = true;
@@ -3929,7 +4089,7 @@
 
             document.getElementById('ninja-cache-prompt').classList.remove('visible');
             const fileId = state.currentFileIdForS1;
-            
+
             try {
                 await executeNinjaFetch(choice.id, choice.name, fileId);
             } finally {
@@ -3999,7 +4159,7 @@
                     const s1Available = client.s1_id !== null;
                     const ninjaAvailable = client.ninja_id !== null;
                     const matchedClass = client.matched ? 'client-matched' : 'client-unmatched';
-                    
+
                     let statusIcons = '';
                     if (s1Available && ninjaAvailable) {
                         statusIcons = '<span class="client-status-icons">🛡️ 🥷</span>';
@@ -4045,6 +4205,9 @@
                     });
                 });
 
+                // Setup search functionality
+                setupClientSearch();
+
             } catch (err) {
                 modalContent.innerHTML = `
                     <div class="empty-state">
@@ -4069,17 +4232,17 @@
             if (matched || (s1Id && ninjaId)) {
                 // Both available - fetch both
                 showToast('Fetching from both SentinelOne and NinjaRMM...', 'info');
-                
+
                 // Fetch from both APIs concurrently and combine results
                 try {
                     const s1Promise = fetchFromS1(s1Id, s1Name);
                     const ninjaPromise = fetchFromNinja(ninjaId, ninjaName);
-                    
+
                     const [s1Data, ninjaData] = await Promise.all([s1Promise, ninjaPromise]);
-                    
+
                     // Combine the endpoints/devices
                     const combined = [...(s1Data?.endpoints || []), ...(ninjaData?.devices || [])];
-                    
+
                     // Upload combined data
                     const response = await fetch('/sentinelone/upload', {
                         method: 'POST',
@@ -4203,12 +4366,12 @@
             if (uploadData.success) {
                 state[`file${fileId}`].sourceType = 'NinjaRMM';
                 state[`file${fileId}`].offlineDevices = offlineDevices;
-                
+
                 // Store full device data with IDs for remediation
                 if (fileId === 2) {
                     state.ninjaDevices = devices;
                 }
-                
+
                 handleNinjaUploadSuccess(fileId, uploadData, orgName, orgId);
                 showToast(`Loaded ${uploadData.row_count} devices from cache (${orgName})`, 'success');
             }
@@ -4231,13 +4394,13 @@
                 console.log(`DEBUG: Fetching Ninja Devices. URL: ${url}, Slot: ${fileId}, Org: ${orgName}`);
 
                 const response = await fetch(url);
-                
+
                 // Check if response is OK
                 if (!response.ok) {
                     const errorText = await response.text();
                     throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
                 }
-                
+
                 // Check content type before parsing
                 const contentTypeNinja = response.headers.get('content-type');
                 if (!contentTypeNinja || !contentTypeNinja.includes('application/json')) {
@@ -4245,7 +4408,7 @@
                     console.error('Non-JSON response:', text.substring(0, 200));
                     throw new Error('Server returned non-JSON response. Check API configuration.');
                 }
-                
+
                 const data = await response.json();
 
                 if (!data.success) {
@@ -4289,21 +4452,21 @@
                     const uploadErrorText = await uploadResponse.text();
                     throw new Error(`Upload failed (HTTP ${uploadResponse.status}): ${uploadErrorText.substring(0, 100)}`);
                 }
-                
+
                 const uploadContentType = uploadResponse.headers.get('content-type');
                 if (!uploadContentType || !uploadContentType.includes('application/json')) {
                     const uploadText = await uploadResponse.text();
                     console.error('Non-JSON upload response:', uploadText.substring(0, 200));
                     throw new Error('Upload returned non-JSON response.');
                 }
-                
+
                 const uploadData = await uploadResponse.json();
 
                 if (uploadData.success) {
                     // Store source type and offline devices
                     state[`file${fileId}`].sourceType = 'NinjaRMM';
                     state[`file${fileId}`].offlineDevices = offlineDevices;
-                    
+
                     // Store full device data with IDs for remediation
                     if (fileId === 2) {
                         state.ninjaDevices = data.devices;
@@ -4456,6 +4619,7 @@
                     body: JSON.stringify({
                         file1_id: state.file1.fileId || '1',
                         file2_id: state.file2.fileId || '2',
+                        file3_id: state.ad.attached && state.adSource ? state.adSource.fileId : '',
                         file1_sheet: state.file1.sheet,
                         file1_column: state.file1.column,
                         file2_sheet: state.file2.sheet,
@@ -4549,6 +4713,16 @@
                     <div class="stat-value violet">${data.stats.prefix_match_count}</div>
                     <div class="stat-label">Prefix Matches</div>
                 </div>
+
+                ${data.ad_attached ? `
+                <div class="stat-card" style="border-color: var(--accent-violet);">
+                    <div class="stat-value violet">🧩 AD Only</div>
+                    <div style="margin-top: 0.75rem; display: grid; gap: 0.35rem; text-align: left;">
+                        <div><span style="color: var(--text-muted);">Total:</span> <span style="color: var(--text-secondary); font-weight: 600;">${data.stats.unique_ad}</span></div>
+                        <div><span style="color: var(--text-muted);">Only here:</span> <span style="color: var(--accent-violet); font-weight: 600;">${data.stats.only_in_ad_count}</span></div>
+                    </div>
+                </div>
+                ` : ''}
             `;
 
             // Populate refresh button labels with counts
@@ -4580,12 +4754,31 @@
             }
 
             // Update tab labels
-            const tabBtns = document.querySelectorAll('.tab-btn');
+            const countFile1 = document.getElementById('tab-count-file1');
+            const countFile2 = document.getElementById('tab-count-file2');
+            const countCommon = document.getElementById('tab-count-common');
+            const countPrefix = document.getElementById('tab-count-prefix');
 
-            tabBtns[0].innerHTML = `Only in ${escapeHtml(displayName1)} <span class="tab-count" id="tab-count-file1">${data.only_in_file1.length}</span>`;
-            tabBtns[1].innerHTML = `Only in ${escapeHtml(displayName2)} <span class="tab-count" id="tab-count-file2">${data.only_in_file2.length}</span>`;
-            tabBtns[2].innerHTML = `Exact Matches <span class="tab-count" id="tab-count-common">${data.in_both.length}</span>`;
-            tabBtns[3].innerHTML = `🔗 Prefix Matches <span class="tab-count" id="tab-count-prefix">${data.prefix_matches ? data.prefix_matches.length : 0}</span>`;
+            if (countFile1) {
+                countFile1.parentElement.innerHTML = `Only in ${escapeHtml(displayName1)} <span class="tab-count" id="tab-count-file1">${data.only_in_file1.length}</span>`;
+            }
+            if (countFile2) {
+                countFile2.parentElement.innerHTML = `Only in ${escapeHtml(displayName2)} <span class="tab-count" id="tab-count-file2">${data.only_in_file2.length}</span>`;
+            }
+            if (countCommon) countCommon.textContent = data.in_both.length;
+            if (countPrefix) countPrefix.textContent = data.prefix_matches ? data.prefix_matches.length : 0;
+
+            // Handle AD tab
+            const adTabBtn = document.getElementById('tab-btn-ad');
+            const adTabCount = document.getElementById('tab-count-ad');
+            if (adTabBtn && adTabCount) {
+                if (data.ad_attached && data.only_in_ad) {
+                    adTabBtn.style.display = 'inline-flex';
+                    adTabCount.textContent = data.only_in_ad.length;
+                } else {
+                    adTabBtn.style.display = 'none';
+                }
+            }
 
             // Value lists - check against offline devices for visual indicator
             const offline1Names = new Set((state.file1.offlineDevices || []).map(d => d.name));
@@ -4612,6 +4805,13 @@
                 data.in_both.length
                     ? data.in_both.map(v => `<span class="value-tag common">${escapeHtml(v)}</span>`).join('')
                     : '<div class="empty-state"><div class="empty-state-icon">🤔</div><p>No common values found</p></div>';
+
+            if (data.only_in_ad) {
+                document.getElementById('only-ad-list').innerHTML =
+                    data.only_in_ad.length
+                        ? data.only_in_ad.map(v => `<span class="value-tag ad">${escapeHtml(v)}</span>`).join('')
+                        : `<div class="empty-state"><div class="empty-state-icon">✨</div><p>No unique values in Active Directory</p></div>`;
+            }
 
             // Prefix Matches list
             const prefixMatches = data.prefix_matches || [];
@@ -4657,13 +4857,19 @@
             document.getElementById('testing-header-file1').textContent = `${state.displayName1} Status`;
             document.getElementById('testing-header-file2').textContent = `${state.displayName2} Status`;
 
+            // Show/Hide AD column header
+            const adHeader = document.getElementById('testing-header-ad');
+            if (adHeader) {
+                adHeader.style.display = data.ad_attached ? 'table-cell' : 'none';
+            }
+
             // Prepare consolidated list
             const devices = new Map(); // key -> { displayName, file1Status, file2Status, linked, sortName }
             const handledInPrefix = new Set();
 
             const offline1 = new Set((state.file1.offlineDevices || []).map(d => d.name));
             const offline2 = new Set((state.file2.offlineDevices || []).map(d => d.name));
-            
+
             // Create maps for quick lookup of lastSeen dates
             const offline1Map = new Map((state.file1.offlineDevices || []).map(d => [d.name, d.lastSeen]));
             const offline2Map = new Map((state.file2.offlineDevices || []).map(d => [d.name, d.lastSeen]));
@@ -4689,6 +4895,7 @@
                     file2: offline2.has(m.file2) ? 'offline' : 'found',
                     file1LastSeen: offline1Map.get(m.file1),
                     file2LastSeen: offline2Map.get(m.file2),
+                    inAd: m.in_ad,
                     linked: true,
                     sortName: m.file1, // Use S1 name for sorting
                     rawFile1: m.file1,
@@ -4697,7 +4904,7 @@
             });
 
             // Helper to set status for single devices
-            const setStatus = (name, fileId, status) => {
+            const setStatus = (name, fileId, status, inAd = null) => {
                 if (handledInPrefix.has(name)) return;
 
                 if (!devices.has(name)) {
@@ -4707,6 +4914,7 @@
                         file2: 'missing',
                         file1LastSeen: null,
                         file2LastSeen: null,
+                        inAd: inAd,
                         linked: false,
                         sortName: name,
                         rawFile1: fileId === 1 ? name : '',
@@ -4715,6 +4923,7 @@
                 }
                 const entry = devices.get(name);
                 entry[`file${fileId}`] = status;
+                if (inAd !== null) entry.inAd = inAd; // Update if provided
                 if (status === 'offline') {
                     entry[`file${fileId}LastSeen`] = fileId === 1 ? offline1Map.get(name) : offline2Map.get(name);
                 }
@@ -4723,17 +4932,21 @@
             };
 
             // 2. Process all other categories
-            data.in_both.forEach(v => {
-                setStatus(v, 1, offline1.has(v) ? 'offline' : 'found');
-                setStatus(v, 2, offline2.has(v) ? 'offline' : 'found');
+            (data.results_common || []).forEach(item => {
+                setStatus(item.name, 1, offline1.has(item.name) ? 'offline' : 'found', item.in_ad);
+                setStatus(item.name, 2, offline2.has(item.name) ? 'offline' : 'found', item.in_ad);
             });
 
-            data.only_in_file1.forEach(v => {
-                setStatus(v, 1, offline1.has(v) ? 'offline' : 'found');
+            (data.results_file1 || []).forEach(item => {
+                setStatus(item.name, 1, offline1.has(item.name) ? 'offline' : 'found', item.in_ad);
             });
 
-            data.only_in_file2.forEach(v => {
-                setStatus(v, 2, offline2.has(v) ? 'offline' : 'found');
+            (data.results_file2 || []).forEach(item => {
+                setStatus(item.name, 2, offline2.has(item.name) ? 'offline' : 'found', item.in_ad);
+            });
+
+            (data.results_ad || []).forEach(item => {
+                setStatus(item.name, 0, null, true); // passing 0/null to just initialize the entry if missing
             });
 
             // Convert to array
@@ -4746,11 +4959,17 @@
             items.sort((a, b) => {
                 if (field === 'name') {
                     return dir * a.sortName.localeCompare(b.sortName);
+                } else if (field === 'inAd') {
+                    const valA = a.inAd ? 1 : 0;
+                    const valB = b.inAd ? 1 : 0;
+                    if (valA !== valB) return dir * (valA - valB);
+                    return a.sortName.localeCompare(b.sortName);
                 } else {
                     // Sort by status: Found (2) > Offline (1) > Missing (0)
                     const getRank = (status) => {
-                        if (status === 'found') return 2;
-                        if (status === 'offline') return 1;
+                        const s = String(status || '').toLowerCase();
+                        if (s === 'found') return 2;
+                        if (s === 'offline') return 1;
                         return 0;
                     };
                     const rankA = getRank(a[field]);
@@ -4794,7 +5013,7 @@
 
             container.innerHTML = items.map(item => {
                 const needsRemediation = item.file2 === 'found' && (item.file1 === 'missing' || item.file1 === 'offline');
-                
+
                 // Check if device is actually online (last contact within 5 minutes)
                 const deviceName = item.rawFile2 || item.sortName;
                 const device = state.ninjaDevices.find(d => d.name === deviceName);
@@ -4802,15 +5021,15 @@
                 const fiveMinutesAgo = now - (5 * 60 * 1000);
                 const lastContact = device && device.lastContact ? device.lastContact * 1000 : 0;
                 const isDeviceOnline = lastContact > fiveMinutesAgo;
-                
-                const remediationCell = needsRemediation ? 
+
+                const remediationCell = needsRemediation ?
                     `<button class="remediation-btn" 
                             onclick="runRemediation('${escapeHtml(deviceName)}')" 
                             ${!isDeviceOnline || !state.remediationScriptId ? 'disabled' : ''}
                             title="${!state.remediationScriptId ? 'Configure script in Settings' : !isDeviceOnline ? 'Device not online in NinjaRMM (last contact > 5 min)' : 'Install SentinelOne'}">
                         🛠️ Fix S1
                     </button>` : '-';
-                
+
                 return `
                     <tr data-device-name="${escapeHtml(deviceName)}">
                         <td>
@@ -4821,6 +5040,7 @@
                         </td>
                         <td>${getStatusBadge(item.file1, item.file1LastSeen)}</td>
                         <td>${getStatusBadge(item.file2, item.file2LastSeen)}</td>
+                        ${data.ad_attached ? `<td>${item.inAd ? '<span class="status-badge status-found">✅ AD</span>' : '<span class="status-badge status-missing">❌ No AD</span>'}</td>` : ''}
                         <td>${remediationCell}</td>
                     </tr>
                 `;
@@ -4999,11 +5219,11 @@
         document.getElementById('quick-load-btn').addEventListener('click', async () => {
             const saved = localStorage.getItem('lastSourceConfig');
             if (!saved) return;
-            
+
             try {
                 const config = JSON.parse(saved);
                 console.log('Quick load config:', config);
-                
+
                 // Check if we have both sources saved (unified client flow)
                 if (config.file1 && config.file2) {
                     // Simulate clicking on a unified client with both IDs
@@ -5011,7 +5231,7 @@
                     const s1Name = config.file1.name;
                     const ninjaId = config.file2.id;
                     const ninjaName = config.file2.name;
-                    
+
                     // Create a mock client element with the saved data
                     const mockElement = {
                         dataset: {
@@ -5021,12 +5241,12 @@
                             ninjaName: ninjaName,
                             matched: 'true'
                         },
-                        querySelector: () => ({ 
+                        querySelector: () => ({
                             textContent: s1Name || ninjaName,
-                            trim: function() { return this.textContent; }  // Not needed but safe
+                            trim: function () { return this.textContent; }  // Not needed but safe
                         })
                     };
-                    
+
                     await selectUnifiedClientAndCompare(mockElement);
                 } else {
                     showToast('No previous comparison found', 'info');
@@ -5080,19 +5300,32 @@
                         <div class="settings-info">Showing ${top.length}${devices.length > top.length ? ` of ${devices.length}` : ''} devices (click to copy ID).</div>
                         <div style="display:grid; gap:0.5rem; margin-top:0.75rem;">
                             ${top.map(d => `
-                                <button type="button" class="history-btn" style="text-align:left; justify-content:flex-start;" data-device-id="${d.id}">
+                                <button type="button" class="history-btn" style="text-align:left; justify-content:flex-start;" data-device-id="${d.id}" data-org-id="${d.organizationId}">
                                     <span style="min-width:80px; font-family:'JetBrains Mono', monospace;">${d.id}</span>
                                     <span>${escapeHtml(d.name || 'Unnamed Device')}</span>
+                                    <span style="margin-left:auto; padding-left:1rem; font-size:0.75rem; color:var(--text-muted);">Org: ${d.organizationId}</span>
                                 </button>
                             `).join('')}
                         </div>
                     `;
 
                     devicesEl.querySelectorAll('[data-device-id]').forEach(btn => {
-                        btn.addEventListener('click', async () => {
-                            const id = btn.getAttribute('data-device-id');
-                            try { await navigator.clipboard.writeText(String(id)); } catch (e) { }
-                            showToast(`Copied device ID: ${id}`, 'success');
+                        btn.addEventListener('click', async (e) => {
+                            const deviceId = btn.getAttribute('data-device-id');
+                            const orgId = btn.getAttribute('data-org-id');
+
+                            const isOrgClick = e.target.closest('span') && e.target.closest('span').textContent.includes('Org:');
+                            const idToUse = isOrgClick ? orgId : deviceId;
+                            const typeToUse = isOrgClick ? 'org' : 'device';
+
+                            try { await navigator.clipboard.writeText(String(idToUse)); } catch (e) { }
+                            showToast(`Copied ${typeToUse} ID: ${idToUse}`, 'success');
+
+                            // Auto-populate inspection fields
+                            const inspectIdInput = document.getElementById('debug-inspect-id');
+                            const inspectTypeSelect = document.getElementById('debug-inspect-type');
+                            if (inspectIdInput) inspectIdInput.value = idToUse;
+                            if (inspectTypeSelect) inspectTypeSelect.value = typeToUse;
                         });
                     });
                 }
@@ -5105,6 +5338,96 @@
             // Ensure scripts are loaded if possible (same endpoint used by Settings)
             try { await loadNinjaScripts(); } catch (e) { }
             renderDebugIds();
+        });
+
+        // Inspect Custom Field
+        const inspectBtn = document.getElementById('debug-inspect-btn');
+        if (inspectBtn) inspectBtn.addEventListener('click', async () => {
+            const id = document.getElementById('debug-inspect-id').value.trim();
+            const type = document.getElementById('debug-inspect-type').value;
+            const field = document.getElementById('debug-inspect-field').value.trim() || 'ADInventoryJson';
+            const output = document.getElementById('debug-inspect-output');
+
+            if (!id) {
+                showToast('Please enter an ID to inspect', 'error');
+                return;
+            }
+
+            inspectBtn.disabled = true;
+            inspectBtn.classList.add('loading');
+            output.textContent = 'Inspecting...';
+            output.parentElement.style.display = 'block';
+
+            try {
+                const resp = await fetch('/ad/debug/inspect-field', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, type, field })
+                });
+
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Inspection failed');
+
+                if (!data.found) {
+                    output.textContent = data.message || 'Field not found or empty';
+                } else {
+                    // Try to pretty-print if it's JSON
+                    try {
+                        const json = JSON.parse(data.raw);
+                        output.textContent = JSON.stringify(json, null, 2);
+                    } catch (e) {
+                        output.textContent = data.raw;
+                    }
+                }
+            } catch (err) {
+                output.textContent = 'Error: ' + err.message;
+            } finally {
+                inspectBtn.disabled = false;
+                inspectBtn.classList.remove('loading');
+            }
+        });
+
+        // List All Fields
+        const listFieldsBtn = document.getElementById('debug-list-fields-btn');
+        if (listFieldsBtn) listFieldsBtn.addEventListener('click', async () => {
+            const id = document.getElementById('debug-inspect-id').value.trim();
+            const type = document.getElementById('debug-inspect-type').value;
+            const output = document.getElementById('debug-inspect-output');
+            const resultLabel = document.getElementById('debug-inspect-label');
+
+            if (!id) {
+                showToast('Please enter an ID to list fields', 'error');
+                return;
+            }
+
+            listFieldsBtn.disabled = true;
+            listFieldsBtn.classList.add('loading');
+            output.textContent = 'Fetching all fields...';
+            output.parentElement.style.display = 'block';
+            resultLabel.textContent = `All Fields for ${type} ${id}:`;
+
+            try {
+                const resp = await fetch('/ad/debug/list-fields', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, type })
+                });
+
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Request failed');
+
+                const fieldCount = Object.keys(data.fields || {}).length;
+                if (fieldCount === 0) {
+                    output.textContent = data.message || 'No custom fields found for this ' + type;
+                } else {
+                    output.textContent = JSON.stringify(data.fields, null, 2);
+                }
+            } catch (err) {
+                output.textContent = 'Error: ' + err.message;
+            } finally {
+                listFieldsBtn.disabled = false;
+                listFieldsBtn.classList.remove('loading');
+            }
         });
 
         // Sorting for Testing View
@@ -5341,7 +5664,7 @@
 
                 if (data.success) {
                     state.allNinjaDevices = data.devices || [];
-                    
+
                     if (data.devices && data.devices.length > 0) {
                         select.innerHTML = '<option value="">-- Select a device (DC recommended) --</option>';
 
@@ -5355,7 +5678,6 @@
                         // Restore saved selection
                         if (state.ad.deviceId) {
                             select.value = state.ad.deviceId;
-                            validateAdConfig();
                         }
                     } else {
                         select.innerHTML = '<option value="">No devices found for this client</option>';
@@ -5371,46 +5693,16 @@
             }
         }
 
-        // Validate AD configuration (device + script)
-        async function validateAdConfig() {
-            const statusDiv = document.getElementById('ad-device-status');
-            if (!state.ad.deviceId || !state.ad.scriptId) {
-                if (statusDiv) statusDiv.textContent = '';
-                return;
-            }
-
-            if (statusDiv) statusDiv.textContent = 'Validating...';
-
-            try {
-                const resp = await fetch(`/ad/debug?device_id=${state.ad.deviceId}&script_id=${state.ad.scriptId}`);
-                const data = await resp.json();
-
-                if (data.ready) {
-                    if (statusDiv) {
-                        statusDiv.innerHTML = `<span style="color: var(--accent-green);">✓ Valid:</span> ${data.device_info?.systemName || 'Device'} + ${data.script_info?.name || 'Script'}`;
-                    }
-                } else {
-                    let msg = [];
-                    if (data.device_error) msg.push(`Device: ${data.device_error}`);
-                    if (data.script_error) msg.push(`Script: ${data.script_error}`);
-                    if (statusDiv) {
-                        statusDiv.innerHTML = `<span style="color: var(--accent-red);">✗ ${msg.join('; ')}</span>`;
-                    }
-                }
-            } catch (err) {
-                if (statusDiv) statusDiv.textContent = 'Validation failed: ' + err.message;
-            }
-        }
 
         // Load available NinjaRMM scripts
         async function loadNinjaScripts() {
             const select = document.getElementById('remediation-script-select');
             select.innerHTML = '<option value="">Loading scripts...</option>';
-            
+
             try {
                 const response = await fetch('/ninjarmm/scripts');
                 const data = await response.json();
-                
+
                 if (data.success) {
                     state.availableScripts = data.scripts;
 
@@ -5460,7 +5752,7 @@
                 localStorage.setItem('remediationScriptId', scriptId);
                 updateScriptInfo(scriptId);
                 showToast('Remediation script configured', 'success');
-                
+
                 // Re-render testing view to update button states
                 if (state.currentComparisonData) {
                     renderTestingView(document.getElementById('testing-search').value);
@@ -5496,7 +5788,6 @@
                 state.ad.deviceId = Number.isFinite(v) ? v : null;
                 if (state.ad.deviceId) {
                     localStorage.setItem('adDeviceId', state.ad.deviceId);
-                    validateAdConfig();
                 } else {
                     localStorage.removeItem('adDeviceId');
                 }
@@ -5510,7 +5801,6 @@
                 state.ad.scriptId = Number.isFinite(v) ? v : null;
                 if (state.ad.scriptId) {
                     localStorage.setItem('adScriptId', state.ad.scriptId);
-                    validateAdConfig();
                 } else {
                     localStorage.removeItem('adScriptId');
                 }
@@ -5560,7 +5850,7 @@
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
-        async function fetchAdInventory() {
+        async function fetchAdInventory(options = {}) {
             snapshotPrimarySources();
             if (!state.primarySources) {
                 showToast('Select a client and load Ninja/S1 first', 'error');
@@ -5580,11 +5870,17 @@
             const client = state.clientName;
             const days = state.ad.days || 30;
 
-            const btns = [document.getElementById('fetch-ad-btn'), document.getElementById('fetch-ad-btn-results')].filter(Boolean);
+            const btns = [
+                document.getElementById('fetch-ad-btn'),
+                document.getElementById('fetch-ad-btn-results'),
+                document.getElementById('sync-ad-btn'),
+                document.getElementById('sync-ad-btn-results')
+            ].filter(Boolean);
             btns.forEach(b => { b.disabled = true; b.classList.add('loading'); });
 
             try {
-                const triggerResp = await fetch('/ad/trigger', {
+                const endpoint = options.syncOnly ? '/ad/sync' : '/ad/trigger';
+                const triggerResp = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -5597,9 +5893,9 @@
                 });
 
                 const triggerData = await triggerResp.json();
-                if (!triggerData.success) throw new Error(triggerData.error || 'Failed to trigger AD inventory');
+                if (!triggerData.success) throw new Error(triggerData.error || `Failed to ${options.syncOnly ? 'sync' : 'trigger'} AD inventory`);
 
-                // /ad/trigger waits for the script and caches the snapshot server-side
+                // /ad/trigger or /ad/sync caches the snapshot server-side
                 const attachResp = await fetch('/ad/attach', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -5607,28 +5903,33 @@
                 });
 
                 const attachData = await attachResp.json();
-                if (!attachData.success) throw new Error(attachData.error || 'Failed to attach AD snapshot');
+                if (!attachData.success) throw new Error(attachData.error || 'Failed to attach AD inventory');
 
                 state.ad.attached = true;
-                state.ad.count = attachData.row_count || triggerData.count || 0;
-                state.ad.receivedAt = null;
+                state.ad.count = attachData.row_count || 0;
+                localStorage.setItem('adAttached', 'true');
+                localStorage.setItem('adCount', state.ad.count);
                 state.adSource = {
                     fileId: '3',
                     uploaded: true,
                     sheet: attachData.sheets[0],
                     column: attachData.columns[0],
-                    filename: `Active Directory (${days}d)`,
+                    filename: options.syncOnly ? `Active Directory (Sync: ${attachData.count})` : `Active Directory (${days}d)`,
                     sourceType: 'Active Directory',
                     offlineDevices: []
                 };
 
                 updateAdUi();
-                showToast(`AD inventory received (${state.ad.count} computers)`, 'success');
+                showToast(triggerData.message || `AD inventory received (${state.ad.count} computers)`, 'success');
+
+                // Auto-refresh comparison if primary sources are already loaded
+                if (state.file1.uploaded && state.file2.uploaded) {
+                    await runComparison();
+                }
 
             } catch (err) {
                 showToast(err.message || 'AD inventory failed', 'error');
             } finally {
-                const btns = [document.getElementById('fetch-ad-btn'), document.getElementById('fetch-ad-btn-results')].filter(Boolean);
                 btns.forEach(b => { b.disabled = false; b.classList.remove('loading'); });
             }
         }
@@ -5639,6 +5940,12 @@
 
         const fetchAdBtnResults = document.getElementById('fetch-ad-btn-results');
         if (fetchAdBtnResults) fetchAdBtnResults.addEventListener('click', fetchAdInventory);
+
+        const syncAdBtn = document.getElementById('sync-ad-btn');
+        if (syncAdBtn) syncAdBtn.addEventListener('click', () => fetchAdInventory({ syncOnly: true }));
+
+        const syncAdBtnResults = document.getElementById('sync-ad-btn-results');
+        if (syncAdBtnResults) syncAdBtnResults.addEventListener('click', () => fetchAdInventory({ syncOnly: true }));
 
         const compareS1AdBtn = document.getElementById('compare-s1-ad-btn');
         if (compareS1AdBtn) compareS1AdBtn.addEventListener('click', async () => {
@@ -5725,12 +6032,12 @@
             const now = Date.now();
             const fiveMinutesAgo = now - (5 * 60 * 1000);
             const lastContact = device.lastContact ? device.lastContact * 1000 : 0; // Convert to milliseconds
-            
+
             if (lastContact < fiveMinutesAgo) {
                 const minutesAgo = Math.floor((now - lastContact) / (60 * 1000));
-                const timeAgo = minutesAgo < 60 ? `${minutesAgo} minutes` : 
-                               minutesAgo < 1440 ? `${Math.floor(minutesAgo / 60)} hours` : 
-                               `${Math.floor(minutesAgo / 1440)} days`;
+                const timeAgo = minutesAgo < 60 ? `${minutesAgo} minutes` :
+                    minutesAgo < 1440 ? `${Math.floor(minutesAgo / 60)} hours` :
+                        `${Math.floor(minutesAgo / 1440)} days`;
                 showToast(`Device is not currently online (last contact: ${timeAgo} ago)`, 'error');
                 return;
             }
@@ -5738,7 +6045,7 @@
             // Find the button and update its state
             const row = document.querySelector(`tr[data-device-name="${deviceName}"]`);
             const button = row ? row.querySelector('.remediation-btn') : null;
-            
+
             if (button) {
                 button.disabled = true;
                 button.innerHTML = '<span class="spinner"></span> Running...';
