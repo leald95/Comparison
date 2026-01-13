@@ -21,7 +21,7 @@ Notes:
 [CmdletBinding()]
 param(
   [Parameter(Mandatory=$false)]
-  [int]$Days = 30,
+  [int]$Days = 0,
 
   [Parameter(Mandatory=$false)]
   [string]$RunId = ''
@@ -39,11 +39,27 @@ if (-not $NinjaPropertySet) {
   Fail "Ninja-Property-Set is not available in this environment."
 }
 
-# Some runners may pass Days as empty/0; enforce the hard default.
-if (-not $Days) { $Days = 30 }
+# Parameter handling: Accept from NinjaRMM or use hardcoded defaults
+# NinjaRMM may pass parameters as JSON string or individual parameters
+Write-Host "Script started with Days=$Days, RunId='$RunId'"
 
-if ($Days -notin @(30,60,90)) { Fail "Days must be one of: 30, 60, 90" }
-if ([string]::IsNullOrWhiteSpace($RunId)) { $RunId = [guid]::NewGuid().ToString('N') }
+# Validate and apply defaults for Days
+if (-not $Days -or $Days -eq 0) {
+  $Days = 30
+  Write-Host "Days parameter not provided or invalid, using default: $Days"
+}
+
+if ($Days -notin @(30,60,90)) {
+  Fail "Days must be one of: 30, 60, 90 (received: $Days)"
+}
+
+# Validate and apply defaults for RunId
+if ([string]::IsNullOrWhiteSpace($RunId)) {
+  $RunId = [guid]::NewGuid().ToString('N')
+  Write-Host "RunId not provided, generated new RunId: $RunId"
+} else {
+  Write-Host "Using provided RunId: $RunId"
+}
 
 # Target NinjaOne custom field name (hardcoded)
 $CustomFieldName = 'ADInventoryJson'
