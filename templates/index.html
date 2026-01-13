@@ -2365,6 +2365,10 @@
                             <span class="status-icon">⏳</span>
                             <span class="status-text">Fetching data from APIs...</span>
                         </div>
+                        <div class="status-step" id="status-ready" style="display: none;">
+                            <span class="status-icon">✅</span>
+                            <span class="status-text">Data loaded! Ready to compare.</span>
+                        </div>
                         <div class="status-step" id="status-comparing" style="display: none;">
                             <span class="status-icon">⚡</span>
                             <span class="status-text">Comparing data...</span>
@@ -2373,6 +2377,13 @@
                             <span class="status-icon">✅</span>
                             <span class="status-text">Comparison complete!</span>
                         </div>
+                    </div>
+                    
+                    <!-- Proceed to Compare Button -->
+                    <div id="proceed-compare-container" style="display: none; text-align: center; margin-top: 1.5rem;">
+                        <button type="button" class="select-client-main-btn" id="proceed-compare-btn">
+                            <span class="btn-text">⚡ Proceed to Compare</span>
+                        </button>
                     </div>
 
                     <div class="sources-summary" id="sources-summary" style="display: none;">
@@ -5609,19 +5620,40 @@
                     }
                 }
 
-                // Update status to comparing
+                // Update status to ready (don't auto-compare)
                 document.getElementById('status-fetching').style.display = 'none';
-                document.getElementById('status-comparing').style.display = 'flex';
-
-                // Automatically run comparison
-                await new Promise(resolve => setTimeout(resolve, 500)); // Brief delay for UX
-                await runComparison();
-                snapshotPrimarySources();
-                updateAdUi();
-
-                // Update status to complete
                 document.getElementById('status-comparing').style.display = 'none';
-                document.getElementById('status-complete').style.display = 'flex';
+                document.getElementById('status-complete').style.display = 'none';
+                
+                // Show ready status with proceed button
+                const statusReady = document.getElementById('status-ready');
+                const proceedContainer = document.getElementById('proceed-compare-container');
+                if (statusReady) statusReady.style.display = 'flex';
+                if (proceedContainer) proceedContainer.style.display = 'block';
+
+                // Add event handler to trigger comparison (only once)
+                const proceedBtn = document.getElementById('proceed-compare-btn');
+                proceedBtn.addEventListener('click', async () => {
+                    // Hide proceed button and ready status
+                    document.getElementById('proceed-compare-container').style.display = 'none';
+                    document.getElementById('status-ready').style.display = 'none';
+                    
+                    // Show comparing status
+                    document.getElementById('status-comparing').style.display = 'flex';
+                    
+                    try {
+                        await runComparison();
+                        snapshotPrimarySources();
+                        updateAdUi();
+                        
+                        // Show complete status
+                        document.getElementById('status-comparing').style.display = 'none';
+                        document.getElementById('status-complete').style.display = 'flex';
+                    } catch (err) {
+                        showToast('Comparison failed: ' + err.message, 'error');
+                        document.getElementById('status-comparing').style.display = 'none';
+                    }
+                }, { once: true });
 
                 // Save the last source config with client name for quick reload
                 if (s1Id && s1Name) {
