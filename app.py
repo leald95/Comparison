@@ -831,7 +831,7 @@ def index():
 
 @app.route('/favicon.ico')
 def favicon():
-    return '', 204
+    return send_from_directory('static', 'favicon.svg', mimetype='image/svg+xml')
 
 
 @app.route('/upload', methods=['POST'])
