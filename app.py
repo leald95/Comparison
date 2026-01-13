@@ -2116,10 +2116,14 @@ def trigger_ad_inventory():
         # Default to runAs system if no specific credential is provided
         run_as = (os.getenv('NINJARMM_SCRIPT_RUN_AS') or 'system').strip()
 
-        # Build payload - no parameters, let the script use defaults
+        # Build payload with parameters (Days and RunId) so polling can validate results
+        # Format parameters as JSON string for Ninja script runner
+        ninja_parameters = json.dumps(script_params, separators=(',', ':'))
+        
         payload = {
             'id': int(script_id),
             'type': 'SCRIPT',
+            'parameters': ninja_parameters
         }
         if script_uid:
             payload['uid'] = script_uid
@@ -2237,36 +2241,53 @@ def trigger_ad_inventory():
                 if not parsed:
                     continue
 
-                # runId check is important to ensure this is the result of OUR trigger
-                if run_id and str(parsed.get('runId') or '').strip() != run_id:
-                    logger.debug('Polling: runId mismatch (got %s, expected %s)', parsed.get('runId'), run_id)
-                    continue
-
-                # Validate age if possible, but don't be too strict if we have workstations
+                # Validate timestamp age (must be recent)
                 gen = str(parsed.get('generatedAtUtc') or '').strip()
+                is_recent = False
                 try:
                     gen_dt = datetime.fromisoformat(gen.replace('Z', '+00:00'))
                     if gen_dt.tzinfo is None:
                         gen_dt = gen_dt.replace(tzinfo=timezone.utc)
-                    if gen_dt.timestamp() < (started_at - 10):
-                        logger.debug('Polling: data is too old (%s < %s)', gen_dt.timestamp(), started_at)
-                        continue
-                except Exception:
-                    pass
+                    age_seconds = time.time() - gen_dt.timestamp()
+                    # Data must be generated after we started (with 10s grace period for clock skew)
+                    if gen_dt.timestamp() >= (started_at - 10):
+                        is_recent = True
+                    else:
+                        logger.debug('Polling: data is too old (age: %ds)', int(age_seconds))
+                except Exception as e:
+                    logger.debug('Polling: timestamp validation failed: %s', str(e))
 
-                # Validate days
+                # Validate days parameter
+                days_match = False
                 try:
                     parsed_days = int(parsed.get('days') or 0)
-                    if parsed_days != days:
+                    if parsed_days == days:
+                        days_match = True
+                    else:
                         logger.debug('Polling: days mismatch (got %d, expected %d)', parsed_days, days)
-                        continue
                 except Exception:
                     pass
 
-                count = _save_ad_inventory_to_excel(parsed, client, days, clean_client)
-                if count is not None:
-                    logger.info(f"AD inventory received after {poll_attempt} poll attempts")
-                    return jsonify({'success': True, 'message': 'AD inventory received', 'count': count})
+                # runId check (preferred but not required - some Ninja environments may not pass parameters)
+                runid_match = False
+                parsed_runid = str(parsed.get('runId') or '').strip()
+                if parsed_runid and parsed_runid == run_id:
+                    runid_match = True
+                    logger.debug('Polling: runId match confirmed')
+                elif parsed_runid:
+                    logger.debug('Polling: runId mismatch (got %s, expected %s)', parsed_runid, run_id)
+
+                # Accept data if: (runId matches) OR (recent timestamp AND days match)
+                # This handles both cases: parameters passed correctly, or fallback to timestamp+days validation
+                if runid_match or (is_recent and days_match):
+                    count = _save_ad_inventory_to_excel(parsed, client, days, clean_client)
+                    if count is not None:
+                        validation_method = 'runId' if runid_match else 'timestamp+days'
+                        logger.info(f"AD inventory received after {poll_attempt} poll attempts (validated by {validation_method})")
+                        return jsonify({'success': True, 'message': 'AD inventory received', 'count': count})
+                else:
+                    logger.debug('Polling: data validation failed (runId=%s, recent=%s, days_match=%s)', runid_match, is_recent, days_match)
+                    continue
 
             logger.warning(f"AD inventory timed out after {poll_attempt} poll attempts over {timeout_s}s")
             return jsonify({'error': 'Timed out waiting for AD results in Ninja custom field'}), 504
