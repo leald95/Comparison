@@ -2412,6 +2412,19 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- AD Device Selection (DC/Workstation) -->
+                        <div style="margin-bottom: 1rem; max-width: 500px; margin-left: auto; margin-right: auto;">
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-size: 0.9rem; font-weight: 600; text-align: left;">
+                                💻 Domain Controller / AD Device
+                            </label>
+                            <select id="ad-device-select-main" class="settings-select" style="width: 100%;">
+                                <option value="">Select DC device...</option>
+                            </select>
+                            <div style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted); text-align: left;">
+                                Select the device with AD query capability (DC with RSAT/AD module)
+                            </div>
+                        </div>
+
                         <div style="display:flex; gap:0.75rem; justify-content:center; flex-wrap:wrap;">
                             <button type="button" class="select-client-main-btn" id="fetch-ad-btn">
                                 <span class="btn-text">🧩 Fetch AD</span>
@@ -5544,6 +5557,9 @@
                 const adControls = document.getElementById('ad-controls');
                 if (adControls) adControls.style.display = 'block';
                 updateAdUi();
+                
+                // Load AD devices for the selected client
+                loadNinjaDevicesForAD();
 
                 // Validate we have at least one data source
                 if (!s1Data && !ninjaData) {
@@ -5683,10 +5699,13 @@
         // Load available NinjaRMM devices for AD device picker
         async function loadNinjaDevicesForAD() {
             const select = document.getElementById('ad-device-select');
+            const selectMain = document.getElementById('ad-device-select-main');
             const statusDiv = document.getElementById('ad-device-status');
-            if (!select) return;
+            
+            if (!select && !selectMain) return;
 
-            select.innerHTML = '<option value="">Loading devices...</option>';
+            if (select) select.innerHTML = '<option value="">Loading devices...</option>';
+            if (selectMain) selectMain.innerHTML = '<option value="">Loading devices...</option>';
             if (statusDiv) statusDiv.textContent = '';
 
             // If a client is selected, filter by org_id
@@ -5701,29 +5720,33 @@
                     state.allNinjaDevices = data.devices || [];
 
                     if (data.devices && data.devices.length > 0) {
-                        select.innerHTML = '<option value="">-- Select a device (DC recommended) --</option>';
-
-                        data.devices.forEach(device => {
-                            const option = document.createElement('option');
-                            option.value = device.id;
-                            option.textContent = device.name;
-                            select.appendChild(option);
-                        });
+                        const optionsHTML = '<option value="">-- Select a device (DC recommended) --</option>' +
+                            data.devices.map(device => 
+                                `<option value="${device.id}">${escapeHtml(device.name)}</option>`
+                            ).join('');
+                        
+                        if (select) select.innerHTML = optionsHTML;
+                        if (selectMain) selectMain.innerHTML = optionsHTML;
 
                         // Restore saved selection
                         if (state.ad.deviceId) {
-                            select.value = state.ad.deviceId;
+                            if (select) select.value = state.ad.deviceId;
+                            if (selectMain) selectMain.value = state.ad.deviceId;
                         }
                     } else {
-                        select.innerHTML = '<option value="">No devices found for this client</option>';
+                        const noDevicesHTML = '<option value="">No devices found for this client</option>';
+                        if (select) select.innerHTML = noDevicesHTML;
+                        if (selectMain) selectMain.innerHTML = noDevicesHTML;
                         if (statusDiv) statusDiv.textContent = orgId ? 'No devices in this organization' : 'No devices available';
                     }
                 } else {
-                    select.innerHTML = '<option value="">Error loading devices</option>';
+                    const errorHTML = '<option value="">Error loading devices</option>';
+                    if (select) select.innerHTML = errorHTML;
+                    if (selectMain) selectMain.innerHTML = errorHTML;
                     if (statusDiv) statusDiv.textContent = data.error || 'Failed to load devices';
                 }
             } catch (err) {
-                select.innerHTML = '<option value="">Error loading devices</option>';
+                if (select) select.innerHTML = '<option value="">Error loading devices</option>';
                 if (statusDiv) statusDiv.textContent = err.message;
             }
         }
@@ -5817,6 +5840,8 @@
         }
 
         const adDeviceSelect = document.getElementById('ad-device-select');
+        const adDeviceSelectMain = document.getElementById('ad-device-select-main');
+        
         if (adDeviceSelect) {
             adDeviceSelect.addEventListener('change', (e) => {
                 const v = parseInt(e.target.value);
@@ -5826,6 +5851,22 @@
                 } else {
                     localStorage.removeItem('adDeviceId');
                 }
+                // Sync with main page selector
+                if (adDeviceSelectMain) adDeviceSelectMain.value = e.target.value;
+            });
+        }
+        
+        if (adDeviceSelectMain) {
+            adDeviceSelectMain.addEventListener('change', (e) => {
+                const v = parseInt(e.target.value);
+                state.ad.deviceId = Number.isFinite(v) ? v : null;
+                if (state.ad.deviceId) {
+                    localStorage.setItem('adDeviceId', state.ad.deviceId);
+                } else {
+                    localStorage.removeItem('adDeviceId');
+                }
+                // Sync with settings selector
+                if (adDeviceSelect) adDeviceSelect.value = e.target.value;
             });
         }
 
