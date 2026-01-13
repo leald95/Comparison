@@ -2117,8 +2117,9 @@ def trigger_ad_inventory():
         run_as = (os.getenv('NINJARMM_SCRIPT_RUN_AS') or 'system').strip()
 
         # Build payload with parameters (Days and RunId) so polling can validate results
-        # Format parameters as JSON string for Ninja script runner
-        ninja_parameters = json.dumps(script_params, separators=(',', ':'))
+        # Format parameters as PowerShell-style: -Days 60 -RunId "abc123"
+        ninja_parameters = _format_ninja_parameters_powershell(script_params)
+        logger.info('Formatted script parameters: %s', ninja_parameters)
         
         payload = {
             'id': int(script_id),
