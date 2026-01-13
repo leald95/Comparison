@@ -28,16 +28,36 @@ logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO').upper())
 logger = logging.getLogger(__name__)
 
 # Simple in-process cache for Ninja OAuth tokens
+TOKEN_CACHE_FILE = '.ninja_token_cache.json'
 _NINJA_TOKEN_CACHE = {
     'access_token': None,
     'refresh_token': None,
     'expires_at': 0,
     'api_url': None,
-    'grant_type': None,  # 'client_credentials' or 'authorization_code'
+    'grant_type': None,
 }
 
-# State parameter for OAuth authorization code flow (CSRF protection)
-_NINJA_OAUTH_STATE = {}
+def _save_ninja_token_cache():
+    try:
+        with open(TOKEN_CACHE_FILE, 'w') as f:
+            json.dump(_NINJA_TOKEN_CACHE, f)
+    except Exception as e:
+        logger.warning('Failed to save Ninja token cache: %s', e)
+
+def _load_ninja_token_cache():
+    if os.path.exists(TOKEN_CACHE_FILE):
+        try:
+            with open(TOKEN_CACHE_FILE, 'r') as f:
+                data = json.load(f)
+                _NINJA_TOKEN_CACHE.update(data)
+                logger.info('Loaded Ninja token cache from %s', TOKEN_CACHE_FILE)
+        except Exception as e:
+            logger.warning('Failed to load Ninja token cache: %s', e)
+
+# Initial load
+_load_ninja_token_cache()
+
+
 
 # In-process cache for Active Directory device snapshots received from Ninja
 # Key: (client_name, days) -> {path, count, received_at}
@@ -52,6 +72,20 @@ _AD_INTAKE_NONCES = {}
 _AD_INTAKE_NONCE_TTL_SECONDS = 15 * 60
 
 
+def _get_ninja_api_url():
+    """Return the NinjaRMM API base URL from environment or default."""
+    return os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
+
+
+def _sanitize_client_name(client):
+    """Clean client name: remove emojis/non-ASCII, extra whitespace, newlines."""
+    if not client:
+        return ""
+    clean = ' '.join(client.split())
+    clean = clean.encode('ascii', 'ignore').decode('ascii').strip()
+    return clean
+
+
 def _prune_ad_intake_nonces(now=None):
     now = now or time.time()
     expired = [t for t, v in _AD_INTAKE_NONCES.items() if v.get('expires_at', 0) <= now]
@@ -64,6 +98,7 @@ def _fetch_with_retry(url, headers=None, auth=None, params=None, timeout=30, max
     Fetch URL with retry logic and exponential backoff.
     Handles transient failures and rate limiting.
     """
+    response = None
     for attempt in range(max_retries):
         try:
             response = requests.get(url, headers=headers, auth=auth, params=params, timeout=timeout)
@@ -129,19 +164,19 @@ def fix_encoding(value):
     value = value.replace('\u2013', '-').replace('\u2014', '-')  # – and —
     
     # Fix mojibake patterns (common misencoded UTF-8)
-    replacements = {
-        'â€™': "'",
-        'â€˜': "'",
-        'â€œ': '"',
-        'â€': '"',
-        'â€"': '-',
-        'â€"': '-',
-        'Ã©': 'é',
-        'Ã¨': 'è',
-        'Ã¡': 'á',
-        'Ã ': 'à',
-    }
-    for bad, good in replacements.items():
+    # Use list of tuples to ensure proper ordering (longest patterns first to avoid substring issues)
+    replacements = [
+        ('â€™', "'"),
+        ('â€˜', "'"),
+        ('â€œ', '"'),
+        ('â€"', '-'),
+        ('â€"', '-'),
+        ('Ã©', 'é'),
+        ('Ã¨', 'è'),
+        ('Ã¡', 'á'),
+        ('Ã ', 'à'),
+    ]
+    for bad, good in replacements:
         value = value.replace(bad, good)
     
     return value
@@ -203,8 +238,9 @@ def normalize_value(value, log_transformations=False):
 
 app = Flask(__name__)
 
-# Use a stable secret key if provided; falls back to a random key for local dev.
-app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY') or os.urandom(24)
+# Use a stable secret key if provided; falls back to a stable default for local dev stability.
+# NOTE: In production, always set FLASK_SECRET_KEY in your .env file.
+app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY') or 'comparison-tool-stable-dev-key-8b92'
 
 # Session cookie hardening (recommended for LAN/prod)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -283,79 +319,39 @@ def _require_csrf():
 
 
 def _get_ninja_auth(api_url):
-    """Return (headers, auth) for NinjaRMM calls; caches OAuth token when used."""
+    """Return (headers, auth) for NinjaRMM calls using authorization_code OAuth flow."""
     client_id = os.getenv('NINJARMM_CLIENT_ID')
     client_secret = os.getenv('NINJARMM_CLIENT_SECRET')
-    api_key = os.getenv('NINJARMM_API_KEY')
-    api_secret = os.getenv('NINJARMM_API_SECRET')
-    grant_type = os.getenv('NINJARMM_OAUTH_GRANT_TYPE', 'client_credentials')
 
-    if (client_id and client_secret):
-        now = time.time()
+    if not (client_id and client_secret):
+        raise ValueError('NinjaRMM OAuth credentials not configured. Set NINJARMM_CLIENT_ID and NINJARMM_CLIENT_SECRET.')
 
-        # Check if we have a valid cached token
-        if (
-            _NINJA_TOKEN_CACHE.get('access_token')
-            and _NINJA_TOKEN_CACHE.get('api_url') == api_url
-            and _NINJA_TOKEN_CACHE.get('expires_at', 0) > (now + 30)
-        ):
-            return ({'Accept': 'application/json', 'Authorization': f"Bearer {_NINJA_TOKEN_CACHE['access_token']}"}, None)
+    now = time.time()
 
-        # For authorization_code flow, try to refresh if we have a refresh token
-        if grant_type == 'authorization_code':
-            if _NINJA_TOKEN_CACHE.get('refresh_token'):
-                try:
-                    return _refresh_ninja_token(api_url, client_id, client_secret)
-                except Exception as e:
-                    logger.warning('NinjaRMM token refresh failed: %s', e)
-                    # Clear cache so user re-authorizes
-                    _NINJA_TOKEN_CACHE.update({
-                        'access_token': None,
-                        'refresh_token': None,
-                        'expires_at': 0,
-                        'api_url': None,
-                        'grant_type': None,
-                    })
-            raise ValueError('NinjaRMM authorization required. Visit /ninjarmm/oauth/authorize to connect.')
+    # Check if we have a valid cached token
+    if (
+        _NINJA_TOKEN_CACHE.get('access_token')
+        and _NINJA_TOKEN_CACHE.get('api_url') == api_url
+        and _NINJA_TOKEN_CACHE.get('expires_at', 0) > (now + 30)
+    ):
+        return ({'Accept': 'application/json', 'Authorization': f"Bearer {_NINJA_TOKEN_CACHE['access_token']}"}, None)
 
-        # Client credentials flow - get new token
-        # Token requests go to app.ninjarmm.com (central OAuth server)
-        oauth_url = os.getenv('NINJARMM_OAUTH_URL', 'https://app.ninjarmm.com')
-        token_response = requests.post(
-            f'{oauth_url}/ws/oauth/token',
-            data={
-                'grant_type': 'client_credentials',
-                'client_id': client_id,
-                'client_secret': client_secret,
-                'scope': os.getenv('NINJARMM_OAUTH_SCOPE', 'monitoring management')
-            },
-            headers={'Content-Type': 'application/x-www-form-urlencoded'},
-            timeout=30
-        )
+    # Try to refresh if we have a refresh token
+    if _NINJA_TOKEN_CACHE.get('refresh_token'):
+        try:
+            return _refresh_ninja_token(api_url, client_id, client_secret)
+        except Exception as e:
+            logger.warning('NinjaRMM token refresh failed: %s', e)
+            # Clear cache so user re-authorizes
+            _NINJA_TOKEN_CACHE.update({
+                'access_token': None,
+                'refresh_token': None,
+                'expires_at': 0,
+                'api_url': None,
+                'grant_type': None,
+            })
 
-        if token_response.status_code != 200:
-            raise ValueError(f"NinjaRMM OAuth error: {token_response.status_code} {token_response.text[:200]}")
-
-        token_json = token_response.json()
-        access_token = token_json.get('access_token')
-        expires_in = int(token_json.get('expires_in') or 3600)
-        if not access_token:
-            raise ValueError('NinjaRMM OAuth error: missing access_token')
-
-        _NINJA_TOKEN_CACHE.update({
-            'access_token': access_token,
-            'refresh_token': None,
-            'expires_at': now + expires_in,
-            'api_url': api_url,
-            'grant_type': 'client_credentials',
-        })
-
-        return ({'Accept': 'application/json', 'Authorization': f'Bearer {access_token}'}, None)
-
-    if (api_key and api_secret):
-        return ({'Accept': 'application/json'}, (api_key, api_secret))
-
-    raise ValueError('NinjaRMM API credentials not configured.')
+    raise ValueError('NinjaRMM authorization required. Visit /ninjarmm/oauth/authorize to connect.')
 
 
 def _refresh_ninja_token(api_url, client_id, client_secret):
@@ -396,8 +392,8 @@ def _refresh_ninja_token(api_url, client_id, client_secret):
         'refresh_token': new_refresh_token,
         'expires_at': now + expires_in,
         'api_url': api_url,
-        'grant_type': 'authorization_code',
     })
+    _save_ninja_token_cache()
 
     logger.info('NinjaRMM OAuth token refreshed successfully')
     return ({'Accept': 'application/json', 'Authorization': f'Bearer {access_token}'}, None)
@@ -529,43 +525,63 @@ def _format_ninja_parameters_space_separated(params: dict) -> str:
 
 def _extract_ninja_custom_field(device_data, field_name: str):
     """Best-effort extraction of a custom field value from a Ninja device payload."""
-    if not isinstance(device_data, dict) or not field_name:
+    if not field_name:
         return None
 
-    # Direct key (rare)
-    for k, v in device_data.items():
-        if isinstance(k, str) and k.lower() == field_name.lower():
-            return v
+    # Case 1: device_data is the exact value (rare)
+    if isinstance(device_data, (str, int, float, bool)) and not isinstance(device_data, dict):
+        # We can't know the name if it's just a value, so skip
+        pass
 
-    for key in ('customFields', 'custom_fields', 'fields', 'properties'):
-        blob = device_data.get(key)
-        if isinstance(blob, dict):
-            for k, v in blob.items():
-                if isinstance(k, str) and k.lower() == field_name.lower():
-                    return v
-        elif isinstance(blob, list):
-            for it in blob:
-                if not isinstance(it, dict):
-                    continue
+    # Case 2: device_data is a dictionary
+    if isinstance(device_data, dict):
+        # Direct key match (case-insensitive)
+        for k, v in device_data.items():
+            if k.lower() == field_name.lower():
+                # If the value is a dict with a 'value' key, it's Ninja's wrapper object
+                if isinstance(v, dict) and 'value' in v:
+                    return v['value']
+                return v
+
+        # Look in known nested keys
+        for key in ('customFields', 'custom_fields', 'fields', 'properties'):
+            blob = device_data.get(key)
+            if blob:
+                found = _extract_ninja_custom_field(blob, field_name)
+                if found is not None:
+                    return found
+
+        # One-level deep scan of all other dictionary values
+        for v in device_data.values():
+            if isinstance(v, (dict, list)):
+                found = _extract_ninja_custom_field(v, field_name)
+                if found is not None:
+                    return found
+
+    # Case 3: device_data is a list
+    if isinstance(device_data, list):
+        for it in device_data:
+            if isinstance(it, dict):
+                # Try common list item formats: {name: '...', value: '...'} or {fieldName: '...', value: '...'}
                 name = it.get('name') or it.get('fieldName') or it.get('key') or it.get('label')
                 if isinstance(name, str) and name.lower() == field_name.lower():
-                    return it.get('value')
-
-    # One-level deep scan
-    for v in device_data.values():
-        if isinstance(v, dict):
-            found = _extract_ninja_custom_field(v, field_name)
-            if found is not None:
-                return found
+                    val = it.get('value')
+                    if isinstance(val, dict) and 'value' in val:
+                        return val['value']
+                    return val
+                # Recurse if the item itself contains fields
+                found = _extract_ninja_custom_field(it, field_name)
+                if found is not None:
+                    return found
 
     return None
 
 
 def _get_ninja_device_custom_field(api_url, headers, auth, device_id: int, field_name: str):
     endpoints = [
-        f'{api_url}/api/v2/device/{device_id}',
+        f'{api_url}/v2/device/{device_id}/custom-fields',
         f'{api_url}/v2/device/{device_id}',
-        f'{api_url}/v2/devices/{device_id}',
+        f'{api_url}/api/v2/device/{device_id}',
     ]
     for endpoint in endpoints:
         try:
@@ -586,9 +602,9 @@ def _get_ninja_device_custom_field(api_url, headers, auth, device_id: int, field
 
 def _get_ninja_organization_custom_field(api_url, headers, auth, org_id: int, field_name: str):
     endpoints = [
-        f'{api_url}/api/v2/organization/{org_id}',
+        f'{api_url}/v2/organization/{org_id}/custom-fields',
         f'{api_url}/v2/organization/{org_id}',
-        f'{api_url}/v2/organizations/{org_id}',
+        f'{api_url}/api/v2/organization/{org_id}',
     ]
     for endpoint in endpoints:
         try:
@@ -605,6 +621,190 @@ def _get_ninja_organization_custom_field(api_url, headers, auth, org_id: int, fi
         except Exception:
             continue
     return None
+
+
+def _get_ninja_all_custom_fields(api_url, headers, auth, entity_type, entity_id):
+    """Fetch and extract all custom fields for an org or device."""
+    if entity_type == 'org':
+        endpoints = [
+            f'{api_url}/v2/organization/{entity_id}/custom-fields',
+            f'{api_url}/v2/organization/{entity_id}',
+            f'{api_url}/api/v2/organization/{entity_id}'
+        ]
+    else:
+        endpoints = [
+            f'{api_url}/v2/device/{entity_id}/custom-fields',
+            f'{api_url}/v2/device/{entity_id}',
+            f'{api_url}/api/v2/device/{entity_id}'
+        ]
+
+    for endpoint in endpoints:
+        try:
+            r = requests.get(endpoint, headers=headers, auth=auth, timeout=15)
+            if r.status_code == 200:
+                payload = r.json()
+                results = {}
+                
+                # If it's already a flat dict of field_name: value
+                if isinstance(payload, dict) and not any(k in payload for k in ('customFields', 'fields', 'properties', 'id', 'systemName')):
+                    return payload
+                
+                # If it's a list of field objects (returned by some /custom-fields versions)
+                if isinstance(payload, list):
+                    for it in payload:
+                        if isinstance(it, dict):
+                            name = it.get('name') or it.get('fieldName') or it.get('key') or it.get('label')
+                            if name:
+                                results[name] = it.get('value')
+                    if results: return results
+
+                # Otherwise, look in known nested keys
+                for key in ('customFields', 'custom_fields', 'fields', 'properties'):
+                    blob = payload.get(key)
+                    if isinstance(blob, dict):
+                        results.update(blob)
+                    elif isinstance(blob, list):
+                        for it in blob:
+                            if isinstance(it, dict):
+                                name = it.get('name') or it.get('fieldName') or it.get('key') or it.get('label')
+                                if name:
+                                    results[name] = it.get('value')
+                
+                if results: return results
+                
+                # If we're at the root and it looks like a device object but no fields found yet
+                # results is still empty, let it try next endpoint
+        except Exception:
+            continue
+    return None
+
+
+def _repair_json(val_str):
+    """Attempt several strategies to repair malformed or loose JSON (commonly from PowerShell)."""
+    if not val_str or not isinstance(val_str, str):
+        return None
+        
+    s = val_str.strip()
+    
+    # Strategy 1: Simple single-to-double quote swap (already done in some places, but good to have here)
+    if "'" in s and '"' not in s: # Looks like single-quote JSON
+        try:
+            return json.loads(s.replace("'", '"'))
+        except Exception:
+            pass
+
+    # Strategy 2: Loose keys (unquoted keys like { days: 30 })
+    try:
+        # Match words followed by colon: ^  days: -> "days":
+        # and unquoted string values that look like UUIDs or ISO dates
+        import re
+        repaired = s
+        # Quote keys
+        repaired = re.sub(r'([{,]\s*)(\w+)(\s*:)', r'\1"\2"\3', repaired)
+        # Quote unquoted string values (basic check for word-only values that aren't numbers/bools)
+        # This regex looks for :  VALUE where VALUE is word/dash/period but not a number
+        repaired = re.sub(r'(:\s*)([a-zA-Z][a-zA-Z0-9\-\._]*)\s*([,}])', r'\1"\2"\3', repaired)
+        return json.loads(repaired)
+    except Exception:
+        pass
+
+    # Strategy 3: Handle truncation
+    if s.endswith('...TRUNCATED...') or (s.count('{') > s.count('}')):
+        try:
+            # Try to close the objects/arrays
+            temp = s.replace('...TRUNCATED...', '').strip()
+            # Remove trailing comma if any
+            temp = re.sub(r',\s*$', '', temp)
+            # Add closing braces until it might parse or we hit a limit
+            for _ in range(5):
+                try:
+                    return json.loads(temp + '}')
+                except Exception:
+                    temp += '}'
+        except Exception:
+            pass
+
+    return None
+
+
+def _regex_extract_ad_data(val_str):
+    """Pure regex fallback to get key data if JSON parsing fails completely."""
+    import re
+    data = {}
+    
+    # Extract generatedAtUtc
+    m = re.search(r'generatedAtUtc\s*[:=]\s*["\']?([\d\-T:\.Z\+ ]+)["\']?', val_str, re.I)
+    if m:
+        data['generatedAtUtc'] = m.group(1).strip()
+    else:
+        # Fallback timestamp if missing, so we don't reject the data
+        from datetime import datetime
+        data['generatedAtUtc'] = datetime.utcnow().isoformat() + 'Z'
+        
+    # Extract days
+    m = re.search(r'days\s*[:=]\s*(\d+)', val_str, re.I)
+    if m:
+        data['days'] = int(m.group(1))
+
+    # Extract names
+    names = []
+    # If we see workstations: [ ... ] or workstations: { ... }
+    m_arr = re.search(r'(?:workstations|computers|data)\s*[:=]\s*[\[\{](.*?)[\}\]]', val_str, re.S | re.I)
+    if m_arr:
+        # Match contents separated by commas (handles quoted AND unquoted)
+        # Split by comma or semicolon
+        raw_items = re.split(r'[,;]', m_arr.group(1))
+        for it in raw_items:
+            clean = it.strip().strip('"\' \t\n\r')
+            if clean and len(clean) > 2:
+                names.append(clean)
+    else:
+        # Last resort: find all quoted strings that look like computer names
+        all_quoted = re.findall(r'["\']([^"\'\[\],:{}]+)["\']', val_str)
+        exclude = {'generatedAtUtc', 'days', 'runId', 'workstations', 'computers', 'data', 'client'}
+        names = [n.strip() for n in all_quoted if n.strip() not in exclude and len(n.strip()) > 2]
+
+    data['workstations'] = names
+    return data
+
+
+def _extract_and_validate_ad_data(val_str):
+    """Unified robust extraction from a custom field string."""
+    if not val_str or not isinstance(val_str, str) or not val_str.strip():
+        return None
+        
+    val_str = val_str.strip()
+    parsed = None
+    
+    # 1. Normal JSON load
+    try:
+        parsed = json.loads(val_str)
+    except Exception:
+        # 2. Repair attempt
+        parsed = _repair_json(val_str)
+        
+    # 3. Regex Fallback
+    if not parsed or not isinstance(parsed, dict) or 'workstations' not in parsed:
+        # If workstations is missing or it's not a dict, try regex
+        parsed = _regex_extract_ad_data(val_str)
+
+    if not parsed or not isinstance(parsed, dict):
+        return None
+        
+    # Ensure workstations/computers key exists
+    if 'workstations' not in parsed and 'computers' in parsed:
+        parsed['workstations'] = parsed['computers']
+        
+    # Final check for workstations
+    if 'workstations' not in parsed:
+        return None
+        
+    # Ensure timestamp exists
+    if 'generatedAtUtc' not in parsed:
+        from datetime import datetime
+        parsed['generatedAtUtc'] = datetime.utcnow().isoformat() + 'Z'
+        
+    return parsed
 
 
 def read_excel_file(filepath):
@@ -773,6 +973,7 @@ def compare_columns():
 
     file1_id = str(data.get('file1_id', '1'))
     file2_id = str(data.get('file2_id', '2'))
+    file3_id = str(data.get('file3_id', '')) # Optional AD file
 
     file1_sheet = data.get('file1_sheet')
     file1_column = data.get('file1_column')
@@ -786,9 +987,22 @@ def compare_columns():
         return jsonify({'error': 'Both files must be uploaded.'}), 400
 
     try:
-        # Read both files
+        # Read files
         df1 = pd.read_excel(session['files'][file1_id], sheet_name=file1_sheet)
         df2 = pd.read_excel(session['files'][file2_id], sheet_name=file2_sheet)
+        
+        # Load AD data if provided
+        set3_norm = set()
+        if file3_id and file3_id in session['files']:
+            try:
+                df3 = pd.read_excel(session['files'][file3_id]) # AD files are always flat-ish
+                # AD schema uses 'Name' column from _save_ad_inventory_to_excel
+                col3_name = 'Name' if 'Name' in df3.columns else df3.columns[0]
+                col3_data = df3[col3_name].dropna().astype(str).tolist()
+                set3_norm = {normalize_value(v) for v in col3_data if normalize_value(v)}
+                logger.info('Loaded AD data for comparison: %d items', len(set3_norm))
+            except Exception as e:
+                logger.warning('Failed to load AD data for comparison: %s', str(e))
         
         # Get the columns and filter out empty values
         col1_data = df1[file1_column].dropna().astype(str).tolist()
@@ -799,7 +1013,6 @@ def compare_columns():
         col2_data = [fix_encoding(v).strip() for v in col2_data if str(v).strip()]
         
         # Create mappings: normalized -> original values
-        # Keep the first original value seen for each normalized form
         norm_to_orig1 = {}
         for v in col1_data:
             norm = normalize_value(v)
@@ -821,13 +1034,11 @@ def compare_columns():
         only_in_file2_norm = set2_norm - set1_norm
         in_both_norm = set1_norm & set2_norm
         
-        # Prefix matching for 15-char truncation (NinjaRMM limitation)
-        # Check if any unmatched item from file1 matches the first 15 chars of an unmatched item from file2, or vice versa
-        # Minimum length threshold prevents false positives on very short hostnames
-        prefix_matches = []  # List of (file1_value, file2_value) tuples
+        # Prefix matching for 15-char truncation
+        prefix_matches = []
         matched_from_file1 = set()
         matched_from_file2 = set()
-        min_prefix_length = 10  # Avoid matching very short names that could be coincidental
+        min_prefix_length = 10
         
         for norm1 in list(only_in_file1_norm):
             orig1 = norm_to_orig1[norm1]
@@ -839,51 +1050,80 @@ def compare_columns():
                 orig2 = norm_to_orig2[norm2]
                 prefix2 = norm2[:15] if len(norm2) > 15 else norm2
                 
-                # Only match if both names are long enough to avoid false positives
                 if len(norm1) >= min_prefix_length and len(norm2) >= min_prefix_length:
-                    # Check if one is a prefix of the other (handles truncation)
                     if prefix1 == prefix2 or norm1.startswith(norm2) or norm2.startswith(norm1):
                         prefix_matches.append({
                             'file1': orig1,
                             'file2': orig2,
-                            'matched_on': 'prefix'
+                            'matched_on': 'prefix',
+                            'in_ad': norm1 in set3_norm or norm2 in set3_norm if set3_norm else None
                         })
                         matched_from_file1.add(norm1)
                         matched_from_file2.add(norm2)
-                        logger.debug(f"Prefix match: '{orig1}' <-> '{orig2}' (normalized: '{norm1}' <-> '{norm2}')")
                         break
         
-        # Remove prefix-matched items from only_in lists
+        # Remove prefix-matched items
         only_in_file1_norm -= matched_from_file1
         only_in_file2_norm -= matched_from_file2
         
-        # Map back to original values for display
-        only_in_file1 = sorted([norm_to_orig1[n] for n in only_in_file1_norm])
-        only_in_file2 = sorted([norm_to_orig2[n] for n in only_in_file2_norm])
-        in_both = sorted([norm_to_orig1[n] for n in in_both_norm])
+        # Construct result objects with AD status
+        def build_result_list(norms, map_orig):
+            res = []
+            for n in sorted(norms):
+                item = {'name': map_orig[n]}
+                if set3_norm:
+                    item['in_ad'] = n in set3_norm
+                res.append(item)
+            return res
+
+        only_in_file1 = build_result_list(only_in_file1_norm, norm_to_orig1)
+        only_in_file2 = build_result_list(only_in_file2_norm, norm_to_orig2)
+        in_both = build_result_list(in_both_norm, norm_to_orig1)
+
+        # Computers only in AD (not in S1 or Ninja)
+        only_in_ad = []
+        if set3_norm:
+            only_in_ad_norm = set3_norm - set1_norm - set2_norm - matched_from_file1 - matched_from_file2
+            only_in_ad = [{'name': n, 'in_ad': True, 's1_missing': True, 'ninja_missing': True} for n in sorted(only_in_ad_norm)]
         
         # Calculate statistics
-        total_file1 = len(col1_data)
-        total_file2 = len(col2_data)
         unique_file1 = len(set1_norm)
         unique_file2 = len(set2_norm)
+        unique_ad = len(set3_norm)
+        
+        # Calculate match percentage with proper handling of empty files
+        total_matches = len(in_both) + len(prefix_matches)
+        max_unique = max(unique_file1, unique_file2)
+        if max_unique > 0:
+            match_percentage = round(total_matches / max_unique * 100, 1)
+        else:
+            # Both files are empty
+            match_percentage = 0.0 if total_matches == 0 else 100.0
         
         return jsonify({
             'success': True,
-            'only_in_file1': only_in_file1,
-            'only_in_file2': only_in_file2,
-            'in_both': in_both,
+            'only_in_file1': [x['name'] for x in only_in_file1],
+            'only_in_file2': [x['name'] for x in only_in_file2],
+            'in_both': [x['name'] for x in in_both],
+            'only_in_ad': [x['name'] for x in only_in_ad],
+            'results_file1': only_in_file1,
+            'results_file2': only_in_file2,
+            'results_common': in_both,
+            'results_ad': only_in_ad,
             'prefix_matches': prefix_matches,
+            'ad_attached': bool(set3_norm),
             'stats': {
-                'total_file1': total_file1,
-                'total_file2': total_file2,
+                'total_file1': len(col1_data),
+                'total_file2': len(col2_data),
                 'unique_file1': unique_file1,
                 'unique_file2': unique_file2,
+                'unique_ad': unique_ad,
                 'only_in_file1_count': len(only_in_file1),
                 'only_in_file2_count': len(only_in_file2),
+                'only_in_ad_count': len(only_in_ad),
                 'common_count': len(in_both),
                 'prefix_match_count': len(prefix_matches),
-                'match_percentage': round((len(in_both) + len(prefix_matches)) / max(unique_file1, unique_file2, 1) * 100, 1)
+                'match_percentage': match_percentage
             }
         })
     
@@ -995,7 +1235,12 @@ def get_sentinelone_endpoints():
             
             # Extract computer names and last active dates
             for agent in agents:
-                computer_name = agent.get('computerName') or agent.get('networkInterfaces', [{}])[0].get('name')
+                computer_name = agent.get('computerName')
+                if not computer_name:
+                    # Safely access networkInterfaces array
+                    interfaces = agent.get('networkInterfaces', [])
+                    if interfaces and isinstance(interfaces, list):
+                        computer_name = interfaces[0].get('name')
                 if computer_name:
                     endpoints.append({
                         'name': fix_encoding(computer_name),
@@ -1096,16 +1341,11 @@ def ninjarmm_oauth_authorize():
 
     # Generate state for CSRF protection
     state = secrets.token_urlsafe(32)
-    _NINJA_OAUTH_STATE[state] = {
+    session['ninja_oauth_state'] = {
+        'state': state,
         'created_at': time.time(),
         'redirect_uri': redirect_uri,
     }
-
-    # Clean up old states (older than 10 minutes)
-    now = time.time()
-    expired_states = [s for s, v in _NINJA_OAUTH_STATE.items() if now - v['created_at'] > 600]
-    for s in expired_states:
-        _NINJA_OAUTH_STATE.pop(s, None)
 
     # Build authorization URL with proper encoding
     params = {
@@ -1136,11 +1376,26 @@ def ninjarmm_oauth_callback():
     if not code:
         return jsonify({'error': 'Missing authorization code'}), 400
 
-    if not state or state not in _NINJA_OAUTH_STATE:
-        return jsonify({'error': 'Invalid or expired state parameter'}), 400
+    saved_state_data = session.pop('ninja_oauth_state', None)
+    if not state or not saved_state_data or state != saved_state_data.get('state'):
+        saved_state = saved_state_data.get('state') if saved_state_data else 'MISSING'
+        logger.warning('OAuth State Mismatch - Received: %s, Saved: %s', state, saved_state)
+        # Check if saved_state_data exists at all
+        if not saved_state_data:
+            logger.warning('No state found in session. This usually happens if the server restarted during authorization or if cookies are blocked.')
+        
+        return jsonify({
+            'error': 'Invalid or expired state parameter.',
+            'details': 'Please ensure you are using a stable FLASK_SECRET_KEY and that your browser allows cookies. Try starting the authorization flow again.',
+            'received': state,
+            'expected': saved_state
+        }), 400
 
-    state_data = _NINJA_OAUTH_STATE.pop(state)
-    redirect_uri = state_data['redirect_uri']
+    # Ensure state is not too old (10 mins)
+    if time.time() - saved_state_data.get('created_at', 0) > 600:
+        return jsonify({'error': 'OAuth authorization timed out. Please try again.'}), 400
+
+    redirect_uri = saved_state_data['redirect_uri']
 
     client_id = os.getenv('NINJARMM_CLIENT_ID')
     client_secret = os.getenv('NINJARMM_CLIENT_SECRET')
@@ -1180,13 +1435,14 @@ def ninjarmm_oauth_callback():
 
         now = time.time()
         _NINJA_TOKEN_CACHE.update({
-            'access_token': access_token,
-            'refresh_token': refresh_token,
-            'expires_at': now + expires_in,
+            'access_token': token_json['access_token'],
+            'refresh_token': token_json.get('refresh_token'),
             'api_url': api_url,
+            'expires_at': time.time() + token_json['expires_in'],
             'grant_type': 'authorization_code',
         })
-
+        _save_ninja_token_cache()
+        
         logger.info('NinjaRMM OAuth authorization successful')
         return jsonify({
             'success': True,
@@ -1203,7 +1459,6 @@ def ninjarmm_oauth_callback():
 @app.route('/ninjarmm/oauth/status', methods=['GET'])
 def ninjarmm_oauth_status():
     """Check the current NinjaRMM OAuth connection status."""
-    grant_type = os.getenv('NINJARMM_OAUTH_GRANT_TYPE', 'client_credentials')
     now = time.time()
 
     connected = bool(
@@ -1212,11 +1467,9 @@ def ninjarmm_oauth_status():
     )
 
     return jsonify({
-        'configured_grant_type': grant_type,
         'connected': connected,
         'has_refresh_token': bool(_NINJA_TOKEN_CACHE.get('refresh_token')),
         'expires_in': max(0, int(_NINJA_TOKEN_CACHE.get('expires_at', 0) - now)) if connected else 0,
-        'cached_grant_type': _NINJA_TOKEN_CACHE.get('grant_type'),
     })
 
 
@@ -1228,98 +1481,12 @@ def ninjarmm_oauth_disconnect():
         'refresh_token': None,
         'expires_at': 0,
         'api_url': None,
-        'grant_type': None,
     })
+    _save_ninja_token_cache()
     logger.info('NinjaRMM OAuth tokens cleared')
     return jsonify({'success': True, 'message': 'Disconnected from NinjaRMM'})
 
 
-@app.route('/ninjarmm/test', methods=['GET'])
-def test_ninjarmm_auth():
-    """Test different authentication methods for NinjaRMM."""
-    if os.getenv('ENABLE_NINJARMM_TEST', '0') not in ('1', 'true', 'True'):
-        return jsonify({'error': 'Not found'}), 404
-
-    api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
-    api_key = os.getenv('NINJARMM_API_KEY')
-    api_secret = os.getenv('NINJARMM_API_SECRET')
-    
-    results = []
-    
-    # Test 1: Basic Auth with requests auth parameter
-    try:
-        response = requests.get(
-            f'{api_url}/v2/organizations',
-            auth=(api_key, api_secret),
-            headers={'Accept': 'application/json'},
-            timeout=10
-        )
-        results.append({
-            'method': 'requests auth parameter',
-            'status': response.status_code,
-            'response': response.text[:200]
-        })
-    except Exception as e:
-        results.append({'method': 'requests auth parameter', 'error': str(e)})
-    
-    # Test 2: Manual Base64 Authorization header
-    try:
-        credentials = f"{api_key}:{api_secret}"
-        encoded = base64.b64encode(credentials.encode()).decode()
-        response = requests.get(
-            f'{api_url}/v2/organizations',
-            headers={
-                'Accept': 'application/json',
-                'Authorization': f'Basic {encoded}'
-            },
-            timeout=10
-        )
-        results.append({
-            'method': 'Manual Basic Auth header',
-            'status': response.status_code,
-            'response': response.text[:200]
-        })
-    except Exception as e:
-        results.append({'method': 'Manual Basic Auth header', 'error': str(e)})
-    
-    # Test 3: Bearer token with API key
-    try:
-        response = requests.get(
-            f'{api_url}/v2/organizations',
-            headers={
-                'Accept': 'application/json',
-                'Authorization': f'Bearer {api_key}'
-            },
-            timeout=10
-        )
-        results.append({
-            'method': 'Bearer with API key',
-            'status': response.status_code,
-            'response': response.text[:200]
-        })
-    except Exception as e:
-        results.append({'method': 'Bearer with API key', 'error': str(e)})
-    
-    # Test 4: No auth (to see default error)
-    try:
-        response = requests.get(
-            f'{api_url}/v2/organizations',
-            headers={'Accept': 'application/json'},
-            timeout=10
-        )
-        results.append({
-            'method': 'No authentication',
-            'status': response.status_code,
-            'response': response.text[:200]
-        })
-    except Exception as e:
-        results.append({'method': 'No authentication', 'error': str(e)})
-    
-    return jsonify({
-        'api_url': api_url,
-        'api_key_length': len(api_key) if api_key else 0,
-        'tests': results
-    })
 
 
 @app.route('/ninjarmm/organizations', methods=['GET'])
@@ -1478,11 +1645,10 @@ def get_unified_clients():
     ninja_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
     ninja_client_id = os.getenv('NINJARMM_CLIENT_ID')
     ninja_client_secret = os.getenv('NINJARMM_CLIENT_SECRET')
-    ninja_api_key = os.getenv('NINJARMM_API_KEY')
-    ninja_api_secret = os.getenv('NINJARMM_API_SECRET')
     
     s1_available = bool(s1_url and s1_token)
-    ninja_available = bool((ninja_client_id and ninja_client_secret) or (ninja_api_key and ninja_api_secret))
+    ninja_available = bool(ninja_client_id and ninja_client_secret)
+    
     
     s1_sites = []
     ninja_orgs = []
@@ -1745,14 +1911,14 @@ def run_ninjarmm_script():
         script_uid = _lookup_ninja_script_uid(api_url, headers, auth, script_id, device_id=device_id)
 
         payload = {
-            'id': script_id,
+            'id': int(script_id),
             'type': 'SCRIPT',
             'parameters': ninja_parameters
         }
         if script_uid:
             payload['uid'] = script_uid
 
-        run_as = (os.getenv('NINJARMM_SCRIPT_RUN_AS') or '').strip()
+        run_as = (os.getenv('NINJARMM_SCRIPT_RUN_AS') or 'system').strip()
         if run_as:
             payload['runAs'] = run_as
         
@@ -1801,6 +1967,41 @@ def run_ninjarmm_script():
         return jsonify({'error': str(e)}), 500
 
 
+def _save_ad_inventory_to_excel(parsed_data, client, days, clean_client):
+    """Process AD inventory JSON data and save to Excel cache."""
+    items = parsed_data.get('workstations') or parsed_data.get('computers') or []
+    if not isinstance(items, list):
+        return None
+
+    names = []
+    for it in items:
+        if isinstance(it, dict):
+            name = it.get('name')
+        else:
+            name = it
+        if name:
+            names.append(fix_encoding(name).strip())
+    names = [n for n in names if n]
+
+    uploads_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
+    filename = f'ad_computers_{uuid.uuid4().hex}.xlsx'
+    filepath = os.path.join(uploads_root, filename)
+
+    df = pd.DataFrame({'Computer Name': names})
+    df.to_excel(filepath, index=False, engine='openpyxl')
+
+    entry = {
+        'path': filepath,
+        'count': len(names),
+        'received_at': int(time.time()),
+    }
+    _AD_CACHE[(client, days)] = entry
+    if clean_client and clean_client != client:
+        _AD_CACHE[(clean_client, days)] = entry
+    
+    return len(names)
+
+
 @app.route('/ad/trigger', methods=['POST'])
 def trigger_ad_inventory():
     """Trigger a NinjaRMM script to inventory Active Directory computers, then pull results from a custom field."""
@@ -1836,11 +2037,10 @@ def trigger_ad_inventory():
     except Exception:
         return jsonify({'error': 'org_id, device_id, and script_id must be integers'}), 400
 
-    api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
+    api_url = _get_ninja_api_url()
 
-    # Clean client name: remove emojis/non-ASCII, extra whitespace, newlines
-    clean_client = ' '.join(client.split())
-    clean_client = clean_client.encode('ascii', 'ignore').decode('ascii').strip()
+    # Clean client name
+    clean_client = _sanitize_client_name(client)
 
     run_id = uuid.uuid4().hex
     started_at = time.time()
@@ -1866,12 +2066,42 @@ def trigger_ad_inventory():
         
         headers = {**headers, 'Content-Type': 'application/json'}
 
-        # Try to get previous custom field values (non-critical, continue on failure)
-        previous_org_value = None
+        # Try to get previous device custom field value (non-critical, continue on failure)
         previous_device_value = None
         try:
-            previous_org_value = _get_ninja_organization_custom_field(api_url, headers, auth, org_id, _AD_CUSTOM_FIELD_NAME)
             previous_device_value = _get_ninja_device_custom_field(api_url, headers, auth, device_id, _AD_CUSTOM_FIELD_NAME)
+            
+            # CHECK FOR RECENT DATA (10 minutes)
+            if previous_device_value:
+                try:
+                    parsed = json.loads(previous_device_value)
+                    if not isinstance(parsed, dict):
+                        logger.debug('Cache check: Device field is not a JSON object')
+                    else:
+                        # Verify days and age
+                        gen = str(parsed.get('generatedAtUtc') or '').strip()
+                        if gen:
+                            gen_dt = datetime.fromisoformat(gen.replace('Z', '+00:00'))
+                            if gen_dt.tzinfo is None:
+                                gen_dt = gen_dt.replace(tzinfo=timezone.utc)
+                                
+                            age_seconds = time.time() - gen_dt.timestamp()
+                            parsed_days = int(parsed.get('days') or 0)
+                            
+                            logger.debug('Cache check (device): age=%ds days=%d (requested %d)', int(age_seconds), parsed_days, days)
+                            
+                            if age_seconds < 600 and parsed_days == days:
+                                logger.info('Reusing existing AD inventory data from device (age: %ds)', int(age_seconds))
+                                count = _save_ad_inventory_to_excel(parsed, client, days, clean_client)
+                                if count is not None:
+                                    return jsonify({
+                                        'success': True, 
+                                        'message': f'Reused recent AD inventory from Ninja device field', 
+                                        'count': count,
+                                        'cached': True
+                                    })
+                except Exception as e:
+                    logger.debug('Cache check (device) failed: %s', str(e))
         except Exception as e:
             logger.warning('Failed to get previous custom field values: %s', str(e))
 
@@ -1883,13 +2113,12 @@ def trigger_ad_inventory():
         except Exception as e:
             logger.warning('Script UID lookup failed: %s', str(e), exc_info=True)
 
-        # Only use runAs if explicitly configured via environment variable
-        # Otherwise, let NinjaRMM use its default (typically SYSTEM)
-        run_as = (os.getenv('NINJARMM_SCRIPT_RUN_AS') or '').strip()
+        # Default to runAs system if no specific credential is provided
+        run_as = (os.getenv('NINJARMM_SCRIPT_RUN_AS') or 'system').strip()
 
         # Build payload - no parameters, let the script use defaults
         payload = {
-            'id': script_id,
+            'id': int(script_id),
             'type': 'SCRIPT',
         }
         if script_uid:
@@ -1912,16 +2141,72 @@ def trigger_ad_inventory():
             return jsonify({'error': f'NinjaRMM API connection error: {str(e)}'}), 500
 
         if last_resp.status_code in (200, 204):
-            # Poll the organization custom field for results with adaptive intervals
+            # 1. OPTIONAL: Monitor Job Success (New behavior)
+            job_id = None
+            if last_resp.status_code == 200:
+                try:
+                    job_data = last_resp.json()
+                    job_id = job_data.get('id') or job_data.get('uid')
+                except Exception:
+                    pass
+
+            if job_id:
+                logger.info('Monitoring NinjaRMM job status: job_id=%s', job_id)
+                job_deadline = time.time() + 120 # 2 minute limit for job status check
+                job_success = False
+                
+                while time.time() < job_deadline:
+                    try:
+                        # Poll device jobs endpoint
+                        jobs_url = f'{api_url}/v2/device/{device_id}/jobs'
+                        jr = requests.get(jobs_url, headers=headers, auth=auth, timeout=10)
+                        if jr.status_code == 200:
+                            active_jobs = jr.json()
+                            # Check both id and uid
+                            target_job = next((j for j in active_jobs if j.get('id') == job_id or j.get('uid') == job_id), None)
+                            
+                            if target_job:
+                                status = target_job.get('jobStatus') or target_job.get('status')
+                                result = target_job.get('jobResult') or target_job.get('result')
+                                logger.debug('Job %s current status: %s (result: %s)', job_id, status, result)
+                                
+                                if status == 'COMPLETED':
+                                    if result == 'SUCCESS':
+                                        job_success = True
+                                        logger.info('NinjaRMM job %s completed successfully.', job_id)
+                                        break
+                                    else:
+                                        logger.error('NinjaRMM job %s failed with result: %s', job_id, result)
+                                        return jsonify({'error': f'NinjaRMM script failed: {result}'}), 500
+                                elif status in ('CANCELLED', 'FAILED'):
+                                    logger.error('NinjaRMM job %s reached terminal state: %s', job_id, status)
+                                    return jsonify({'error': f'NinjaRMM script execution {status.lower()}'}), 500
+                            else:
+                                # If job is not in active jobs list, it might have finished and moved to history
+                                # Before we give up, we'll wait a bit and check activities or just proceed to custom field polling
+                                logger.debug('Job %s not found in active jobs list; proceeding to custom field check.', job_id)
+                                job_success = True # Assume it might have finished extremely fast
+                                break
+                    except Exception as e:
+                        logger.warning('Error checking job status: %s', str(e))
+                    
+                    time.sleep(3)
+                
+                if not job_success and time.time() >= job_deadline:
+                    logger.warning('Job %s did not reach COMPLETED state within timeout; proceeding to check custom fields anyway.', job_id)
+
+            # 2. Poll the device custom field for results with adaptive intervals
             try:
-                timeout_s = int(os.getenv('AD_CUSTOM_FIELD_POLL_TIMEOUT_SECONDS', '120'))
+                timeout_s = int(os.getenv('AD_CUSTOM_FIELD_POLL_TIMEOUT_SECONDS', '300'))
             except Exception:
-                timeout_s = 120
+                timeout_s = 300
             
-            # Adaptive polling: start fast, then slow down (2s, 2s, 4s, 4s, 8s, 8s...)
+            # Adaptive polling: start fast, then slow down
             poll_attempt = 0
             deadline = time.time() + timeout_s
             last_seen = None
+
+            logger.info('Starting device custom field polling for AD results...')
 
             while time.time() < deadline:
                 # Calculate adaptive interval: 2s for first 2 attempts, then exponential
@@ -1929,21 +2214,18 @@ def trigger_ad_inventory():
                 time.sleep(poll_interval_s)
                 poll_attempt += 1
 
-                # Prefer org-scoped field, but fall back to device-scoped field.
-                org_value = _get_ninja_organization_custom_field(api_url, headers, auth, org_id, _AD_CUSTOM_FIELD_NAME)
+                # Strictly poll device-scoped field.
                 device_value = _get_ninja_device_custom_field(api_url, headers, auth, device_id, _AD_CUSTOM_FIELD_NAME)
 
-                candidates = []
-                if org_value and (previous_org_value is None or org_value != previous_org_value):
-                    candidates.append(org_value)
-                if device_value and (previous_device_value is None or device_value != previous_device_value):
-                    candidates.append(device_value)
-
-                if not candidates:
+                if not device_value:
+                    continue
+                
+                # Check for change
+                if previous_device_value is not None and device_value == previous_device_value:
                     continue
 
-                # Avoid re-processing the same candidate value.
-                value = candidates[0]
+                # Avoid re-processing if it hasn't changed since last poll iteration
+                value = device_value
                 if last_seen is not None and value == last_seen:
                     continue
                 last_seen = value
@@ -1951,67 +2233,40 @@ def trigger_ad_inventory():
                 if '...TRUNCATED...' in value:
                     return jsonify({'error': f"AD payload in Ninja custom field '{_AD_CUSTOM_FIELD_NAME}' was truncated."}), 500
 
-                try:
-                    parsed = json.loads(value)
-                except Exception:
+                parsed = _extract_and_validate_ad_data(value)
+                if not parsed:
                     continue
 
-                if not isinstance(parsed, dict):
+                # runId check is important to ensure this is the result of OUR trigger
+                if run_id and str(parsed.get('runId') or '').strip() != run_id:
+                    logger.debug('Polling: runId mismatch (got %s, expected %s)', parsed.get('runId'), run_id)
                     continue
 
-                if str(parsed.get('runId') or '').strip() != run_id:
-                    continue
-
+                # Validate age if possible, but don't be too strict if we have workstations
                 gen = str(parsed.get('generatedAtUtc') or '').strip()
                 try:
                     gen_dt = datetime.fromisoformat(gen.replace('Z', '+00:00'))
                     if gen_dt.tzinfo is None:
                         gen_dt = gen_dt.replace(tzinfo=timezone.utc)
-                    if gen_dt.timestamp() < (started_at - 5):
+                    if gen_dt.timestamp() < (started_at - 10):
+                        logger.debug('Polling: data is too old (%s < %s)', gen_dt.timestamp(), started_at)
                         continue
                 except Exception:
-                    continue
+                    pass
 
+                # Validate days
                 try:
                     parsed_days = int(parsed.get('days') or 0)
+                    if parsed_days != days:
+                        logger.debug('Polling: days mismatch (got %d, expected %d)', parsed_days, days)
+                        continue
                 except Exception:
-                    parsed_days = 0
+                    pass
 
-                if parsed_days != days:
-                    continue
-
-                items = parsed.get('workstations') or parsed.get('computers') or []
-                if not isinstance(items, list):
-                    continue
-
-                names = []
-                for it in items:
-                    if isinstance(it, dict):
-                        name = it.get('name')
-                    else:
-                        name = it
-                    if name:
-                        names.append(fix_encoding(name).strip())
-                names = [n for n in names if n]
-
-                uploads_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
-                filename = f'ad_computers_{uuid.uuid4().hex}.xlsx'
-                filepath = os.path.join(uploads_root, filename)
-
-                df = pd.DataFrame({'Computer Name': names})
-                df.to_excel(filepath, index=False, engine='openpyxl')
-
-                entry = {
-                    'path': filepath,
-                    'count': len(names),
-                    'received_at': int(time.time()),
-                }
-                _AD_CACHE[(client, days)] = entry
-                if clean_client and clean_client != client:
-                    _AD_CACHE[(clean_client, days)] = entry
-
-                logger.info(f"AD inventory received after {poll_attempt} poll attempts")
-                return jsonify({'success': True, 'message': 'AD inventory received', 'count': len(names)})
+                count = _save_ad_inventory_to_excel(parsed, client, days, clean_client)
+                if count is not None:
+                    logger.info(f"AD inventory received after {poll_attempt} poll attempts")
+                    return jsonify({'success': True, 'message': 'AD inventory received', 'count': count})
 
             logger.warning(f"AD inventory timed out after {poll_attempt} poll attempts over {timeout_s}s")
             return jsonify({'error': 'Timed out waiting for AD results in Ninja custom field'}), 504
@@ -2029,227 +2284,6 @@ def trigger_ad_inventory():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/ad/debug', methods=['GET'])
-def ad_debug():
-    """Diagnostic endpoint to validate AD trigger configuration (device_id, script_id)."""
-    device_id = request.args.get('device_id')
-    script_id = request.args.get('script_id')
-
-    result = {
-        'device_id': device_id,
-        'script_id': script_id,
-        'device_valid': False,
-        'script_valid': False,
-        'device_info': None,
-        'script_info': None,
-        'device_error': None,
-        'script_error': None,
-        'oauth_token_info': None,
-        'ready': False
-    }
-
-    api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
-
-    try:
-        headers, auth = _get_ninja_auth(api_url)
-        
-        # Decode OAuth token to check permissions (if using OAuth)
-        auth_header = headers.get('Authorization', '')
-        if auth_header.startswith('Bearer '):
-            import base64
-            token = auth_header[7:]  # Remove "Bearer " prefix
-            try:
-                # JWT tokens have 3 parts separated by dots: header.payload.signature
-                token_parts = token.split('.')
-                if len(token_parts) >= 2:
-                    # Decode the payload (second part)
-                    # Add padding if needed
-                    payload = token_parts[1]
-                    padding = 4 - len(payload) % 4
-                    if padding != 4:
-                        payload += '=' * padding
-                    decoded = base64.urlsafe_b64decode(payload)
-                    token_claims = json.loads(decoded)
-                    result['oauth_token_info'] = {
-                        'scopes': token_claims.get('scope', '').split() if token_claims.get('scope') else [],
-                        'expires_at': token_claims.get('exp'),
-                        'subject': token_claims.get('sub'),
-                        'audience': token_claims.get('aud'),
-                        'token_type': 'Bearer/JWT'
-                    }
-            except Exception as e:
-                result['oauth_token_info'] = {'error': f'Failed to decode token: {str(e)}'}
-    except Exception as e:
-        return jsonify({'error': f'Auth failed: {e}', **result}), 400
-
-    # Validate device_id
-    if device_id:
-        try:
-            device_id_int = int(device_id)
-            # Try /api/v2 first, then /v2
-            device_data = None
-            for endpoint in [f'{api_url}/api/v2/device/{device_id_int}', f'{api_url}/v2/device/{device_id_int}']:
-                try:
-                    r = requests.get(endpoint, headers=headers, auth=auth, timeout=10)
-                    if r.status_code == 200:
-                        device_data = r.json()
-                        result['device_valid'] = True
-                        result['device_info'] = {
-                            'id': device_data.get('id'),
-                            'systemName': device_data.get('systemName'),
-                            'dnsName': device_data.get('dnsName'),
-                            'organizationId': device_data.get('organizationId'),
-                            'lastContact': device_data.get('lastContact'),
-                        }
-                        break
-                    elif r.status_code == 404:
-                        continue
-                    else:
-                        result['device_error'] = f'{endpoint} returned {r.status_code}: {r.text[:100]}'
-                        break
-                except Exception as e:
-                    result['device_error'] = str(e)
-            if not device_data and not result['device_error']:
-                result['device_error'] = 'Device not found (404 on all endpoints)'
-        except ValueError:
-            result['device_error'] = 'device_id must be an integer'
-    
-    # Fetch scripting options for the device (if device is valid)
-    if result['device_valid'] and device_id:
-        try:
-            device_id_int = int(device_id)
-            scripting_opts_endpoint = f'{api_url}/v2/device/{device_id_int}/scripting/options'
-            r = requests.get(scripting_opts_endpoint, headers=headers, auth=auth, timeout=10)
-            if r.status_code == 200:
-                opts = r.json()
-                # Handle credentials - API may return nested structure with 'roles' and 'credentials' keys
-                credentials_data = opts.get('credentials') or {}
-                run_as_options = []
-                
-                # If it's a dict with nested structure, extract the actual credentials
-                if isinstance(credentials_data, dict):
-                    # Get roles
-                    for role in (credentials_data.get('roles') or []):
-                        if isinstance(role, dict):
-                            run_as_options.append(role.get('name') or role.get('id') or str(role))
-                        else:
-                            run_as_options.append(str(role))
-                    # Get named credentials
-                    for cred in (credentials_data.get('credentials') or []):
-                        if isinstance(cred, dict):
-                            run_as_options.append(cred.get('name') or cred.get('id') or str(cred))
-                        else:
-                            run_as_options.append(str(cred))
-                elif isinstance(credentials_data, list):
-                    for c in credentials_data:
-                        if isinstance(c, dict):
-                            run_as_options.append(c.get('name') or c.get('id') or str(c))
-                        else:
-                            run_as_options.append(str(c))
-                
-                result['scripting_options'] = {
-                    'runAsOptions': run_as_options,
-                    'scriptsAvailable': len(opts.get('scripts') or []),
-                    'actionsAvailable': len(opts.get('actions') or []),
-                    'raw_response_keys': list(opts.keys()) if isinstance(opts, dict) else str(type(opts)),
-                    'credentials_type': str(type(credentials_data)),
-                    'credentials_keys': list(credentials_data.keys()) if isinstance(credentials_data, dict) else None,
-                }
-            else:
-                result['scripting_options_error'] = f'Failed to fetch: {r.status_code}'
-        except Exception as e:
-            result['scripting_options_error'] = str(e)
-
-    # Validate script_id
-    if script_id:
-        try:
-            script_id_int = int(script_id)
-            # Fetch scripts list and look for matching ID
-            script_data = None
-            for endpoint in [f'{api_url}/v2/automation/scripts', f'{api_url}/v2/queries/scripts', f'{api_url}/v2/scripts']:
-                try:
-                    r = requests.get(endpoint, headers=headers, auth=auth, timeout=15)
-                    if r.status_code != 200:
-                        continue
-                    scripts = r.json()
-                    if isinstance(scripts, dict):
-                        scripts = scripts.get('data') or scripts.get('items') or scripts.get('scripts') or []
-                    for s in (scripts or []):
-                        if isinstance(s, dict) and int(s.get('id', -1)) == script_id_int:
-                            script_data = s
-                            result['script_valid'] = True
-                            result['script_info'] = {
-                                'id': s.get('id'),
-                                'uid': s.get('uid') or s.get('scriptUid'),
-                                'name': s.get('name'),
-                                'language': s.get('scriptType') or s.get('language'),
-                            }
-                            break
-                    if script_data:
-                        break
-                except Exception:
-                    continue
-            if not script_data and not result['script_error']:
-                result['script_error'] = 'Script not found in any scripts endpoint'
-        except ValueError:
-            result['script_error'] = 'script_id must be an integer'
-
-    result['ready'] = result['device_valid'] and result['script_valid']
-    
-    # Optional: actually test the script run API call (dry run)
-    test_run = request.args.get('test_run', '').lower() == 'true'
-    logger.info('ad_debug: test_run=%s ready=%s', test_run, result['ready'])
-    if test_run and result['ready']:
-        try:
-            # Re-get auth for the test call
-            test_headers, test_auth = _get_ninja_auth(api_url)
-            test_headers = {**test_headers, 'Content-Type': 'application/json'}
-            
-            device_id_int = int(device_id)
-            script_id_int = int(script_id)
-            
-            # Try the simplest possible payload
-            test_payload = {
-                'id': script_id_int,
-                'type': 'SCRIPT'
-            }
-            
-            logger.info('ad_debug: attempting test run with payload=%s', test_payload)
-            
-            test_results = []
-            endpoints = [
-                f'{api_url}/v2/device/{device_id_int}/script/run',
-                f'{api_url}/api/v2/device/{device_id_int}/script/run',
-            ]
-            
-            for endpoint in endpoints:
-                try:
-                    logger.info('ad_debug: calling endpoint=%s', endpoint)
-                    r = requests.post(endpoint, json=test_payload, headers=test_headers, auth=test_auth, timeout=15)
-                    logger.info('ad_debug: response status=%s', r.status_code)
-                    test_results.append({
-                        'endpoint': endpoint,
-                        'status': r.status_code,
-                        'body': r.text[:500],
-                        'request_payload': test_payload,
-                        'response_headers': dict(r.headers),
-                    })
-                    # If success, break
-                    if r.status_code in (200, 204):
-                        break
-                except Exception as e:
-                    logger.warning('ad_debug: endpoint error: %s', str(e))
-                    test_results.append({
-                        'endpoint': endpoint,
-                        'error': str(e)
-                    })
-            
-            result['test_run_results'] = test_results
-        except Exception as e:
-            logger.error('ad_debug: test_run error: %s', str(e))
-            result['test_run_error'] = str(e)
-    
-    return jsonify(result)
 
 
 @app.route('/ninjarmm/devices/all', methods=['GET'])
@@ -2392,6 +2426,145 @@ def ad_intake():
     return jsonify({'success': True, 'client': client, 'days': days, 'count': len(names)})
 
 
+@app.route('/ad/sync', methods=['POST'])
+def sync_ad_inventory():
+    """Manually sync AD inventory data from Ninja custom fields without triggering a new script."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
+    data = request.json or {}
+    client = data.get('client')
+    org_id = data.get('org_id')
+    device_id = data.get('device_id')
+    days = int(data.get('days') or 30)
+
+    if not client or not org_id or not device_id:
+        return jsonify({'error': 'Missing client, org_id, or device_id'}), 400
+
+    try:
+        org_id = int(org_id)
+        device_id = int(device_id)
+    except Exception:
+        return jsonify({'error': 'org_id and device_id must be integers'}), 400
+
+    clean_client = _sanitize_client_name(client)
+    api_url = _get_ninja_api_url()
+    logger.info('Syncing AD inventory: client=%s org_id=%s device_id=%s field=%s', clean_client, org_id, device_id, _AD_CUSTOM_FIELD_NAME)
+
+    try:
+        headers, auth = _get_ninja_auth(api_url)
+        headers = {**headers, 'Content-Type': 'application/json'}
+
+        # Get value only from device as requested
+        device_value = _get_ninja_device_custom_field(api_url, headers, auth, device_id, _AD_CUSTOM_FIELD_NAME)
+        
+        logger.debug('Device field value: %s', (device_value[:100] + '...') if device_value else 'None')
+
+        latest_parsed = _extract_and_validate_ad_data(device_value)
+
+        if latest_parsed:
+            comp_count = len(latest_parsed.get('workstations') or [])
+            logger.info('Parsed AD data from device: found %d computers. Keys: %s', comp_count, list(latest_parsed.keys()))
+
+        if latest_parsed:
+            count = _save_ad_inventory_to_excel(latest_parsed, client, days, clean_client)
+            if count is not None:
+                gen_str = latest_parsed.get('generatedAtUtc', 'unknown time')
+                return jsonify({
+                    'success': True,
+                    'message': f'Synced AD inventory from Ninja (Generated at: {gen_str})',
+                    'count': count,
+                    'cached': True
+                })
+        
+        return jsonify({'error': 'No AD inventory data found in custom fields for this organization or device.'}), 404
+
+    except Exception as e:
+        logger.error('AD sync failed: %s', str(e), exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/ad/debug/inspect-field', methods=['POST'])
+def inspect_ninja_field():
+    """Debug endpoint to pull raw custom field data for a specific ID and type."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
+    data = request.json or {}
+    type_ = data.get('type')  # 'org' or 'device'
+    id_ = data.get('id')
+    field = data.get('field') or _AD_CUSTOM_FIELD_NAME
+
+    if not id_ or not type_:
+        return jsonify({'error': 'id and type are required'}), 400
+
+    api_url = _get_ninja_api_url()
+
+    try:
+        headers, auth = _get_ninja_auth(api_url)
+        headers = {**headers, 'Content-Type': 'application/json'}
+
+        if type_ == 'org':
+            value = _get_ninja_organization_custom_field(api_url, headers, auth, int(id_), field)
+        else:
+            value = _get_ninja_device_custom_field(api_url, headers, auth, int(id_), field)
+
+        if value is None:
+            logger.info('Inspect Field: Field "%s" not found for %s %s', field, type_, id_)
+            return jsonify({'success': True, 'found': False, 'message': f'Field "{field}" is empty or not found'})
+
+        logger.info('Inspect Field: Found field "%s" for %s %s. Length: %d', field, type_, id_, len(value))
+        
+        try:
+            parsed = json.loads(value)
+            return jsonify({'success': True, 'found': True, 'raw': value, 'parsed': parsed})
+        except Exception as e:
+            logger.warning('Inspect Field: Failed to parse field "%s" for %s %s: %s', field, type_, id_, str(e))
+            # Try repair for the debug view as well
+            try:
+                repaired = value.replace("'", '"')
+                parsed = json.loads(repaired)
+                logger.info('Inspect Field: JSON repaired for debug view.')
+                return jsonify({'success': True, 'found': True, 'raw': value, 'parsed': parsed, 'was_repaired': True})
+            except Exception:
+                pass
+            return jsonify({'success': True, 'found': True, 'raw': value, 'parsed': None, 'parse_error': str(e)})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/ad/debug/list-fields', methods=['POST'])
+def list_ninja_fields():
+    """Debug endpoint to list all available custom fields for a specific ID and type."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
+    data = request.json or {}
+    type_ = data.get('type')
+    id_ = data.get('id')
+
+    if not id_ or not type_:
+        return jsonify({'error': 'id and type are required'}), 400
+
+    api_url = _get_ninja_api_url()
+
+    try:
+        headers, auth = _get_ninja_auth(api_url)
+        fields = _get_ninja_all_custom_fields(api_url, headers, auth, type_, id_)
+        
+        if not fields:
+            return jsonify({'success': True, 'fields': {}, 'message': 'No custom fields found or entity not reachable'})
+            
+        return jsonify({'success': True, 'fields': fields})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/ad/tokens/generate', methods=['POST'])
 def ad_generate_intake_token():
     """Generate a new AD intake token for rotation.
@@ -2470,6 +2643,7 @@ def ad_attach():
         'filename': 'Active Directory',
         'sheets': ['Sheet1'],
         'columns': ['Computer Name'],
+        'count': entry.get('count', 0),
         'row_count': entry.get('count', 0)
     })
 
