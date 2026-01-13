@@ -272,16 +272,62 @@
 
         .source-summary-card {
             background: var(--bg-elevated);
-            border: 1px solid var(--border-subtle);
+            border: 2px solid var(--border-subtle);
             border-radius: 12px;
             padding: 1.5rem;
             text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            opacity: 0.5;
+        }
+
+        .source-summary-card:hover {
+            border-color: var(--accent-violet);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+        }
+
+        .source-summary-card.selected {
+            opacity: 1;
+            border-color: var(--accent-violet);
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+        }
+
+        .source-summary-card.disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .source-summary-card::after {
+            content: '';
+            position: absolute;
+            top: 0.75rem;
+            right: 0.75rem;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-subtle);
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+
+        .source-summary-card.selected::after {
+            content: '✓';
+            background: var(--accent-violet);
+            border-color: var(--accent-violet);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: bold;
         }
 
         .source-summary-header {
             display: flex;
             align-items: center;
-            justify-content: center;
             gap: 0.75rem;
             margin-bottom: 1rem;
             font-weight: 600;
@@ -1779,7 +1825,6 @@
         .testing-table {
             width: 100%;
             border-collapse: collapse;
-            text-align: left;
         }
 
         .testing-table th {
@@ -2387,27 +2432,31 @@
                     </div>
 
                     <div class="sources-summary" id="sources-summary" style="display: none;">
-                        <div class="source-summary-card">
+                        <div class="source-summary-card" id="source-card-s1" data-source="s1">
                             <div class="source-summary-header">
                                 <span class="source-icon">🛡️</span>
                                 <span class="source-name">SentinelOne</span>
                             </div>
                             <div class="source-summary-count" id="s1-count">0 endpoints</div>
                         </div>
-                        <div class="source-summary-card">
+                        <div class="source-summary-card" id="source-card-ninja" data-source="ninja">
                             <div class="source-summary-header">
                                 <span class="source-icon">🥷</span>
                                 <span class="source-name">NinjaRMM</span>
                             </div>
                             <div class="source-summary-count" id="ninja-count">0 devices</div>
                         </div>
-                        <div class="source-summary-card">
+                        <div class="source-summary-card disabled" id="source-card-ad" data-source="ad">
                             <div class="source-summary-header">
                                 <span class="source-icon">🧩</span>
                                 <span class="source-name">Active Directory</span>
                             </div>
                             <div class="source-summary-count" id="ad-count">Not fetched</div>
                         </div>
+                    </div>
+                    
+                    <div style="text-align: center; margin-top: 1rem; color: var(--text-secondary); font-size: 0.9rem;" id="source-selection-hint">
+                        Click sources above to select what to compare (minimum 2 required)
                     </div>
 
                     <div id="ad-controls" style="display:none; margin-top: 1rem; text-align: center;">
@@ -2747,7 +2796,8 @@
             availableScripts: [],  // Available NinjaRMM scripts
             ninjaDevices: [],  // Store NinjaRMM devices with IDs for remediation
             allNinjaDevices: [],  // All devices (for AD picker)
-            offlineDaysThreshold: 30  // Default offline threshold in days
+            offlineDaysThreshold: 30,  // Default offline threshold in days
+            selectedSources: { s1: false, ninja: false, ad: false }  // Track which sources user wants to compare
         };
 
         // Last Source Config
@@ -5631,9 +5681,31 @@
                 if (statusReady) statusReady.style.display = 'flex';
                 if (proceedContainer) proceedContainer.style.display = 'block';
 
+                // Auto-select available sources
+                if (s1Id) {
+                    state.selectedSources.s1 = true;
+                    const s1Card = document.getElementById('source-card-s1');
+                    if (s1Card) s1Card.classList.add('selected');
+                }
+                if (ninjaId) {
+                    state.selectedSources.ninja = true;
+                    const ninjaCard = document.getElementById('source-card-ninja');
+                    if (ninjaCard) ninjaCard.classList.add('selected');
+                }
+
+                // Setup source card click handlers
+                setupSourceCardHandlers();
+
                 // Add event handler to trigger comparison (only once)
                 const proceedBtn = document.getElementById('proceed-compare-btn');
                 proceedBtn.addEventListener('click', async () => {
+                    // Validate at least 2 sources selected
+                    const selectedCount = Object.values(state.selectedSources).filter(Boolean).length;
+                    if (selectedCount < 2) {
+                        showToast('Please select at least 2 sources to compare', 'error');
+                        return;
+                    }
+
                     // Hide proceed button and ready status
                     document.getElementById('proceed-compare-container').style.display = 'none';
                     document.getElementById('status-ready').style.display = 'none';
@@ -5642,7 +5714,7 @@
                     document.getElementById('status-comparing').style.display = 'flex';
                     
                     try {
-                        await runComparison();
+                        await runComparisonWithSelectedSources();
                         snapshotPrimarySources();
                         updateAdUi();
                         
@@ -5666,6 +5738,85 @@
             } catch (err) {
                 showToast('Failed to fetch and compare data: ' + err.message, 'error');
                 console.error('Error:', err);
+            }
+        }
+
+        // Setup source card click handlers
+        function setupSourceCardHandlers() {
+            const s1Card = document.getElementById('source-card-s1');
+            const ninjaCard = document.getElementById('source-card-ninja');
+            const adCard = document.getElementById('source-card-ad');
+
+            if (s1Card && !s1Card.classList.contains('disabled')) {
+                s1Card.addEventListener('click', () => toggleSourceSelection('s1'));
+            }
+            if (ninjaCard && !ninjaCard.classList.contains('disabled')) {
+                ninjaCard.addEventListener('click', () => toggleSourceSelection('ninja'));
+            }
+            if (adCard && !adCard.classList.contains('disabled')) {
+                adCard.addEventListener('click', () => toggleSourceSelection('ad'));
+            }
+        }
+
+        function toggleSourceSelection(source) {
+            const card = document.getElementById(`source-card-${source}`);
+            if (!card || card.classList.contains('disabled')) return;
+
+            // Toggle selection
+            state.selectedSources[source] = !state.selectedSources[source];
+            
+            if (state.selectedSources[source]) {
+                card.classList.add('selected');
+            } else {
+                card.classList.remove('selected');
+            }
+
+            // Update hint text
+            updateSourceSelectionHint();
+        }
+
+        function updateSourceSelectionHint() {
+            const hint = document.getElementById('source-selection-hint');
+            if (!hint) return;
+
+            const selectedCount = Object.values(state.selectedSources).filter(Boolean).length;
+            
+            if (selectedCount < 2) {
+                hint.textContent = `Click sources above to select what to compare (minimum 2 required, ${selectedCount} selected)`;
+                hint.style.color = 'var(--accent-amber)';
+            } else {
+                hint.textContent = `${selectedCount} sources selected - Click "Proceed to Compare" when ready`;
+                hint.style.color = 'var(--accent-emerald)';
+            }
+        }
+
+        // Run comparison with only selected sources
+        async function runComparisonWithSelectedSources() {
+            // Map selected sources to file slots
+            const sources = [];
+            if (state.selectedSources.s1 && state.file1.uploaded) sources.push(state.file1);
+            if (state.selectedSources.ninja && state.file2.uploaded) sources.push(state.file2);
+            if (state.selectedSources.ad && state.adSource) sources.push(state.adSource);
+
+            if (sources.length < 2) {
+                throw new Error('At least 2 sources must be selected and loaded');
+            }
+
+            // Temporarily assign sources to file1 and file2 for comparison
+            const originalFile1 = { ...state.file1 };
+            const originalFile2 = { ...state.file2 };
+
+            try {
+                // Assign first two selected sources
+                state.file1 = sources[0];
+                state.file2 = sources[1];
+
+                // Run the comparison
+                await runComparison();
+            } finally {
+                // Restore original state
+                state.file1 = originalFile1;
+                state.file2 = originalFile2;
             }
         }
 
@@ -5935,6 +6086,7 @@
             const compareS1Btn = document.getElementById('compare-s1-ad-btn');
             const compareNinjaBtn = document.getElementById('compare-ninja-ad-btn');
             const resultsControls = document.getElementById('ad-controls-results');
+            const adCard = document.getElementById('source-card-ad');
 
             if (countEl) {
                 countEl.textContent = state.ad.attached ? `${state.ad.count} computers` : 'Not fetched';
@@ -5943,6 +6095,23 @@
             const statusText = state.ad.attached ? `Attached (${state.ad.days}d, ${state.ad.count} computers)` : 'Not fetched';
             if (statusEl) statusEl.textContent = statusText;
             if (statusElResults) statusElResults.textContent = statusText;
+
+            // Enable/disable AD source card based on whether AD data is attached
+            if (adCard) {
+                if (state.ad.attached) {
+                    adCard.classList.remove('disabled');
+                    // Auto-select AD when it becomes available
+                    if (!state.selectedSources.ad) {
+                        state.selectedSources.ad = true;
+                        adCard.classList.add('selected');
+                        updateSourceSelectionHint();
+                    }
+                } else {
+                    adCard.classList.add('disabled');
+                    state.selectedSources.ad = false;
+                    adCard.classList.remove('selected');
+                }
+            }
 
             // Show the compare-page button only when a client has been loaded
             if (resultsControls) {
