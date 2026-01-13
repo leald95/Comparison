@@ -5837,17 +5837,19 @@
             }
         }
 
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', () => {
-            fetch('/cleanup', {
-                method: 'POST',
-                keepalive: true,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ csrf_token: csrfToken })
-            });
+        // Cleanup on actual page unload (not SPA navigation)
+        // Use pagehide instead of beforeunload to avoid triggering on every navigation
+        window.addEventListener('pagehide', (event) => {
+            // Only cleanup if page is actually being unloaded (not going into bfcache)
+            if (!event.persisted) {
+                fetch('/cleanup', {
+                    method: 'POST',
+                    keepalive: true,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ csrf_token: csrfToken })
+                });
+            }
         });
-
-        // ========== REMEDIATION AND SETTINGS ==========
 
         // Settings Modal
         document.getElementById('settings-btn').addEventListener('click', () => {
