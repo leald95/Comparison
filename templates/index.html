@@ -6065,11 +6065,6 @@
                 updateAdUi();
                 showToast(triggerData.message || `AD inventory received (${state.ad.count} computers)`, 'success');
 
-                // Auto-refresh comparison if primary sources are already loaded
-                if (state.file1.uploaded && state.file2.uploaded) {
-                    await runComparison();
-                }
-
             } catch (err) {
                 showToast(err.message || 'AD inventory failed', 'error');
             } finally {
