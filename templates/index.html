@@ -5813,6 +5813,7 @@
                     body: JSON.stringify({
                         file1_id: source1.fileId,
                         file2_id: source2.fileId,
+                        file3_id: state.ad.attached && state.adSource ? state.adSource.fileId : '',
                         file1_sheet: source1.sheet,
                         file1_column: source1.column,
                         file2_sheet: source2.sheet,
