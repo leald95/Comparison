@@ -2688,12 +2688,31 @@
             }
         }
 
-        // Cache Helpers
+        // Cache Helpers with TTL validation and size management
         function getCache(source, id) {
             const key = `api_cache_${source}_${id}`;
             const cached = localStorage.getItem(key);
             if (!cached) return null;
-            try { return JSON.parse(cached); } catch (e) { return null; }
+            
+            try {
+                const data = JSON.parse(cached);
+                const age = Date.now() - data.timestamp;
+                const maxAge = 3600000; // 1 hour TTL
+                
+                // Validate cache age
+                if (age > maxAge) {
+                    console.log(`Cache expired for ${key} (age: ${Math.round(age/60000)}min)`);
+                    localStorage.removeItem(key);
+                    return null;
+                }
+                
+                console.log(`Cache hit for ${key} (age: ${Math.round(age/60000)}min)`);
+                return data;
+            } catch (e) {
+                console.error('Cache parse error:', e);
+                localStorage.removeItem(key);
+                return null;
+            }
         }
 
         function setCache(source, id, name, data) {
@@ -2703,11 +2722,85 @@
                 name: name,
                 data: data
             };
-            localStorage.setItem(key, JSON.stringify(cacheObj));
+            
+            // Manage cache size - limit to 50 entries
+            const maxEntries = 50;
+            const cacheKeys = Object.keys(localStorage).filter(k => k.startsWith('api_cache_'));
+            
+            if (cacheKeys.length >= maxEntries) {
+                // Remove oldest cache entry
+                let oldestKey = null;
+                let oldestTime = Date.now();
+                
+                cacheKeys.forEach(k => {
+                    try {
+                        const item = JSON.parse(localStorage.getItem(k));
+                        if (item.timestamp < oldestTime) {
+                            oldestTime = item.timestamp;
+                            oldestKey = k;
+                        }
+                    } catch (e) {
+                        // Remove corrupted entries
+                        localStorage.removeItem(k);
+                    }
+                });
+                
+                if (oldestKey) {
+                    console.log(`Removing oldest cache entry: ${oldestKey}`);
+                    localStorage.removeItem(oldestKey);
+                }
+            }
+            
+            try {
+                localStorage.setItem(key, JSON.stringify(cacheObj));
+                console.log(`Cache saved for ${key}`);
+            } catch (e) {
+                // Handle quota exceeded error
+                if (e.name === 'QuotaExceededError') {
+                    console.warn('LocalStorage quota exceeded, clearing old cache entries');
+                    // Clear all cache entries and try again
+                    cacheKeys.forEach(k => localStorage.removeItem(k));
+                    try {
+                        localStorage.setItem(key, JSON.stringify(cacheObj));
+                    } catch (e2) {
+                        console.error('Failed to save cache even after clearing:', e2);
+                    }
+                } else {
+                    console.error('Cache save error:', e);
+                }
+            }
         }
 
         function clearCache(source, id) {
-            localStorage.removeItem(`api_cache_${source}_${id}`);
+            const key = `api_cache_${source}_${id}`;
+            localStorage.removeItem(key);
+            console.log(`Cache cleared for ${key}`);
+        }
+        
+        // Clear all expired cache entries on page load
+        function pruneExpiredCache() {
+            const maxAge = 3600000; // 1 hour
+            const now = Date.now();
+            const cacheKeys = Object.keys(localStorage).filter(k => k.startsWith('api_cache_'));
+            let pruned = 0;
+            
+            cacheKeys.forEach(key => {
+                try {
+                    const item = JSON.parse(localStorage.getItem(key));
+                    if (now - item.timestamp > maxAge) {
+                        localStorage.removeItem(key);
+                        pruned++;
+                    }
+                } catch (e) {
+                    // Remove corrupted entries
+                    localStorage.removeItem(key);
+                    pruned++;
+                }
+            });
+            
+            if (pruned > 0) {
+                console.log(`Pruned ${pruned} expired/corrupted cache entries`);
+            }
         }
 
         // Utility functions
@@ -3996,7 +4089,7 @@
                             endpoints: combined
                         })
                     });
-                    
+
                     const uploadData = await response.json();
                     if (uploadData.success) {
                         state[`file${fileId}`].sourceType = 'Combined';
@@ -4809,7 +4902,7 @@
                 <span style="font-size: 1.5rem;">💾</span>
                 <div style="flex: 1;">
                     <div style="font-weight: 600; margin-bottom: 0.25rem;">Last comparison available</div>
-                    <div style="font-size: 0.875rem; opacity: 0.9;">${name1} vs ${name2} (${timeAgo})</div>
+                    <div style="font-size: 0.95rem; opacity: 0.9;">${name1} vs ${name2} (${timeAgo})</div>
                 </div>
                 <button id="restore-btn" style="padding: 0.5rem 1rem; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; color: white; font-weight: 600; cursor: pointer; transition: all 0.2s;">
                     Restore
@@ -4838,296 +4931,6 @@
             document.getElementById('restore-btn').addEventListener('mouseleave', (e) => {
                 e.target.style.background = 'rgba(255,255,255,0.2)';
             });
-        }
-
-        // Initialize
-        checkLastComparison();
-        updateQuickLoadButton();
-
-        // Export button
-        document.getElementById('export-btn').addEventListener('click', exportToHTML);
-
-        // Refresh data buttons
-        document.getElementById('refresh-data-1').addEventListener('click', async () => {
-            await refreshDataSource(1);
-        });
-
-        document.getElementById('refresh-data-2').addEventListener('click', async () => {
-            await refreshDataSource(2);
-        });
-
-        async function refreshDataSource(fileId) {
-            const btn = document.getElementById(`refresh-data-${fileId}`);
-            const fileState = state[`file${fileId}`];
-            const sourceType = fileState.sourceType;
-
-            if (!btn) {
-                console.error(`Refresh button not found for file ${fileId}`);
-                showToast('Refresh button not found', 'error');
-                return;
-            }
-
-            if (!sourceType || (sourceType !== 'SentinelOne' && sourceType !== 'NinjaRMM')) {
-                showToast('Cannot refresh this data source', 'error');
-                return;
-            }
-
-            // Prefer the currently compared source, fallback to last saved config
-            let fileConfig = fileState.sourceConfig;
-            if (!fileConfig) {
-                const savedConfig = localStorage.getItem('lastSourceConfig');
-                if (!savedConfig) {
-                    showToast('No saved configuration found', 'error');
-                    return;
-                }
-                const config = JSON.parse(savedConfig);
-                fileConfig = config[`file${fileId}`];
-            }
-
-            if (!fileConfig) {
-                showToast('No configuration found for this source', 'error');
-                return;
-            }
-
-            try {
-                // Set loading state
-                btn.classList.add('loading');
-                btn.disabled = true;
-
-                if (sourceType === 'SentinelOne') {
-                    showToast('Refreshing SentinelOne data...', 'info');
-                    await fetchSentinelOneEndpoints(fileId, fileConfig.id === 'all' ? null : fileConfig.id, fileConfig.name);
-                } else if (sourceType === 'NinjaRMM') {
-                    showToast('Refreshing NinjaRMM data...', 'info');
-                    await fetchNinjaDevices(fileId, fileConfig.id === 'all' ? null : fileConfig.id, fileConfig.name);
-                }
-
-                // After successful refresh, re-run comparison
-                await runComparison();
-                showToast(`${sourceType} data refreshed successfully!`, 'success');
-            } catch (error) {
-                console.error('Refresh error:', error);
-                showToast(`Failed to refresh ${sourceType} data: ${error.message}`, 'error');
-            } finally {
-                btn.classList.remove('loading');
-                btn.disabled = false;
-            }
-        }
-
-        // Export function
-        function exportToHTML() {
-            const file1Name = state.file1.filename || 'File 1';
-            const file2Name = state.file2.filename || 'File 2';
-
-            // Get simplified names
-            const displayName1 = state.file1.sourceType || (file1Name.includes('Endpoints') ? 'SentinelOne' :
-                file1Name.includes('Devices') ? 'NinjaRMM' : file1Name);
-            const displayName2 = state.file2.sourceType || (file2Name.includes('Endpoints') ? 'SentinelOne' :
-                file2Name.includes('Devices') ? 'NinjaRMM' : file2Name);
-
-            const statsHtml = document.getElementById('stats-grid').innerHTML;
-            const onlyFile1Html = document.getElementById('only-file1-list').innerHTML;
-            const onlyFile2Html = document.getElementById('only-file2-list').innerHTML;
-            const commonHtml = document.getElementById('common-list').innerHTML;
-            const prefixHtml = document.getElementById('prefix-list').innerHTML;
-            const offlineHtml = document.getElementById('offline-content').innerHTML;
-
-            const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Comparison Results - ${displayName1} vs ${displayName2}</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-            color: #e2e8f0;
-            padding: 2rem;
-            line-height: 1.6;
-        }
-        .container { max-width: 1400px; margin: 0 auto; }
-        h1 {
-            text-align: center;
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
-            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            padding-bottom: 0.2rem;
-        }
-        .subtitle {
-            text-align: center;
-            color: #94a3b8;
-            margin-bottom: 2rem;
-            font-size: 0.95rem;
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 3rem;
-        }
-        .stat-card {
-            background: rgba(30, 41, 59, 0.5);
-            border: 1px solid rgba(71, 85, 105, 0.3);
-            border-radius: 16px;
-            padding: 1.5rem;
-            text-align: center;
-        }
-        .stat-value {
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-        .stat-value.blue { color: #3b82f6; }
-        .stat-value.cyan { color: #06b6d4; }
-        .stat-value.rose { color: #f43f5e; }
-        .stat-value.amber { color: #f59e0b; }
-        .stat-value.emerald { color: #10b981; }
-        .stat-value.violet { color: #8b5cf6; }
-        .stat-label {
-            color: #94a3b8;
-            font-size: 0.875rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        .section {
-            background: rgba(30, 41, 59, 0.3);
-            border: 1px solid rgba(71, 85, 105, 0.3);
-            border-radius: 20px;
-            padding: 2rem;
-            margin-bottom: 2rem;
-        }
-        .section-title {
-            font-size: 1.5rem;
-            margin-bottom: 1.5rem;
-            color: #e2e8f0;
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-        }
-        .value-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.75rem;
-        }
-        .value-tag {
-            padding: 0.5rem 1rem;
-            border-radius: 8px;
-            font-size: 0.875rem;
-            border: 1px solid;
-            font-family: 'Consolas', 'Courier New', monospace;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .value-tag.file1 { border-color: #06b6d4; background: rgba(6, 182, 212, 0.1); color: #67e8f9; }
-        .value-tag.file2 { border-color: #f59e0b; background: rgba(245, 158, 11, 0.1); color: #fbbf24; }
-        .value-tag.common { border-color: #10b981; background: rgba(16, 185, 129, 0.1); color: #34d399; }
-        .value-tag.offline { 
-            border-color: #f43f5e !important; 
-            background: rgba(244, 63, 94, 0.15) !important;
-            box-shadow: 0 0 10px rgba(244, 63, 94, 0.2);
-        }
-        .value-tag.prefix {
-            border-color: #8b5cf6;
-            background: rgba(139, 92, 246, 0.1);
-            color: #c4b5fd;
-            flex-direction: column;
-            align-items: stretch;
-            min-width: 250px;
-        }
-        .prefix-pair { display: flex; justify-content: space-between; align-items: center; gap: 1rem; font-size: 0.8rem; }
-        .prefix-arrow { color: #8b5cf6; font-weight: bold; }
-        .offline-section { border-color: rgba(245, 158, 11, 0.3); }
-        .offline-source { margin-bottom: 1.5rem; }
-        .offline-source:last-child { margin-bottom: 0; }
-        .offline-source-header { 
-            display: flex; justify-content: space-between; align-items: center;
-            margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid rgba(245, 158, 11, 0.2);
-            font-weight: 600; color: #f59e0b;
-        }
-        .offline-device-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
-        .offline-device-item {
-            background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(245, 158, 11, 0.1);
-            border-radius: 10px; padding: 0.75rem 1rem; display: flex; justify-content: space-between;
-        }
-        .offline-device-name { font-weight: 500; font-family: monospace; }
-        .offline-device-date { font-size: 0.8rem; color: #94a3b8; }
-        .empty-state { text-align: center; padding: 3rem; color: #64748b; }
-        .footer {
-            text-align: center; margin-top: 3rem; padding-top: 2rem;
-            border-top: 1px solid rgba(71, 85, 105, 0.3); color: #64748b; font-size: 0.875rem;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>📊 Comparison Results</h1>
-        <p class="subtitle">${escapeHtml(displayName1)} vs ${escapeHtml(displayName2)} - Generated on ${new Date().toLocaleString()}</p>
-        
-        <div class="stats-grid">
-            ${statsHtml}
-        </div>
-        
-        <div class="section">
-            <div class="section-title">🔵 Only in ${escapeHtml(displayName1)}</div>
-            <div class="value-list">
-                ${onlyFile1Html}
-            </div>
-        </div>
-        
-        <div class="section">
-            <div class="section-title">🟡 Only in ${escapeHtml(displayName2)}</div>
-            <div class="value-list">
-                ${onlyFile2Html}
-            </div>
-        </div>
-        
-        <div class="section">
-            <div class="section-title">🟢 Exact Matches</div>
-            <div class="value-list">
-                ${commonHtml}
-            </div>
-        </div>
-
-        <div class="section" style="${prefixHtml.includes('empty-state') ? '' : 'background: rgba(139, 92, 246, 0.05);'}">
-            <div class="section-title">🔗 Prefix Matches</div>
-            <div class="value-list">
-                ${prefixHtml}
-            </div>
-        </div>
-
-        <div class="section offline-section" style="${offlineHtml.trim() === '' ? 'display: none;' : ''}">
-            <div class="section-title">⚠️ Devices Offline > ${state.offlineDaysThreshold} Days</div>
-            <div class="offline-content">
-                ${offlineHtml}
-            </div>
-        </div>
-        
-        <div class="footer">
-            <p>Excel Column Comparison Tool</p>
-            <p>Exported from Comparison Tool</p>
-        </div>
-    </div>
-</body>
-</html>`;
-
-            // Create blob and download
-            const blob = new Blob([html], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `comparison-${displayName1}-vs-${displayName2}-${Date.now()}.html`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-
-            showToast('Comparison exported to HTML!', 'success');
         }
 
         // Modal close handlers
@@ -5764,6 +5567,11 @@
                 return;
             }
 
+            if (!state.currentNinjaOrgId) {
+                showToast('Load Ninja data for the selected client first (missing org ID)', 'error');
+                return;
+            }
+
             if (!state.ad.scriptId || !state.ad.deviceId) {
                 showToast('Configure AD script + device ID in Settings first', 'error');
                 return;
@@ -5782,6 +5590,7 @@
                     body: JSON.stringify({
                         client,
                         days,
+                        org_id: state.currentNinjaOrgId,
                         device_id: state.ad.deviceId,
                         script_id: state.ad.scriptId
                     })
@@ -5790,19 +5599,7 @@
                 const triggerData = await triggerResp.json();
                 if (!triggerData.success) throw new Error(triggerData.error || 'Failed to trigger AD inventory');
 
-                // Poll for intake
-                let status = null;
-                for (let i = 0; i < 30; i++) {
-                    await sleep(2000);
-                    const stResp = await fetch(`/ad/status?client=${encodeURIComponent(client)}&days=${days}`);
-                    status = await stResp.json();
-                    if (status && status.available) break;
-                }
-
-                if (!status || !status.available) {
-                    throw new Error('Timed out waiting for AD results');
-                }
-
+                // /ad/trigger waits for the script and caches the snapshot server-side
                 const attachResp = await fetch('/ad/attach', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -5813,8 +5610,8 @@
                 if (!attachData.success) throw new Error(attachData.error || 'Failed to attach AD snapshot');
 
                 state.ad.attached = true;
-                state.ad.count = attachData.row_count || status.count || 0;
-                state.ad.receivedAt = status.received_at || null;
+                state.ad.count = attachData.row_count || triggerData.count || 0;
+                state.ad.receivedAt = null;
                 state.adSource = {
                     fileId: '3',
                     uploaded: true,

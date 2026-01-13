@@ -226,39 +226,35 @@ For more details on the NinjaRMM API:
 
 ## Active Directory Inventory (via Ninja)
 
-This project can optionally use a NinjaRMM-run PowerShell script to query Active Directory for computers that have been active within the last N days, then send that list back to the webapp.
+This project can optionally use a NinjaRMM-run PowerShell script to query Active Directory for computers that have been active within the last N days.
 
 ### Flow
 1. Webapp triggers your Ninja script via `POST /ad/trigger`.
 2. Ninja runs the script on the configured device (ideally a DC).
-3. Script POSTs results to the webapp at `POST /ad/intake`.
-4. Browser attaches the received snapshot into the session via `POST /ad/attach`, then you can run comparisons.
+3. Script writes results JSON into the custom field `ADInventoryJson`.
+   - If `ADInventoryJson` is configured as a **Device** custom field, it will be written on the selected DC device.
+   - If your tenant supports org-scoped writes, it may be written at the **Organization** level.
+   (The webapp will poll org first, then fall back to device.)
+4. Webapp waits for completion, reads that custom field, caches the snapshot, then the browser attaches it into the session via `POST /ad/attach`.
 
 ### Script parameters (expected)
 Your Ninja PowerShell script should accept these parameters:
-- `Days` (30/60/90)
-- `ClientName` (display name only)
-- `CallbackUrl` (e.g. `https://yourapp/ad/intake`)
-- `Token` (shared secret)
+- `Days` (30/60/90, default 30)
+- `RunId` (unique run identifier passed by the webapp)
 
-### Script callback
-The script should POST JSON like:
+### Output
+The script should write JSON like this into the `ADInventoryJson` custom field (kept intentionally small to fit common ~10k field limits):
 ```json
 {
-  "client": "Client A",
   "days": 30,
+  "runId": "<run id>",
+  "generatedAtUtc": "2026-01-13T06:18:26.374Z",
   "workstations": [
-    {"name": "PC-01", "lastLogonTimestamp": 1700000000}
+    "PC-01",
+    "PC-02"
   ]
 }
 ```
-With header:
-- `X-AD-Intake-Token: <Token>`
-
-### Token rotation
-Configure tokens on the webapp:
-- `AD_INTAKE_TOKEN_CURRENT`
-- `AD_INTAKE_TOKEN_PREVIOUS` (kept temporarily during rotation)
 
 ## Version History
 

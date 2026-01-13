@@ -4,15 +4,14 @@ NinjaRMM PowerShell Script: Active Directory Computer Inventory
 Purpose:
 - Query Active Directory for enabled computer accounts that have been active within the last N days
   using lastLogonTimestamp (replicated, approximate).
-- POST results back to the webapp /ad/intake endpoint.
+- Write results to a NinjaOne custom field.
 
-Expected parameters (as sent by the webapp):
+Parameters:
 - Days (30/60/90)
-- ClientName (string label)
-- CallbackUrl (e.g. https://yourapp/ad/intake)
-- Nonce (one-time nonce)
-- SigningKey (one-time signing key; used to compute X-AD-Intake-Signature)
-- Token (legacy optional; sent as X-AD-Intake-Token)
+- RunId (unique run identifier passed by the webapp)
+
+Custom field:
+- Hardcoded to 'ADInventoryJson'
 
 Notes:
 - Must run on a domain-joined host with RSAT AD module available (or a DC).
@@ -21,23 +20,11 @@ Notes:
 
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory=$true)]
-  [int]$Days,
-
-  [Parameter(Mandatory=$true)]
-  [string]$ClientName,
-
-  [Parameter(Mandatory=$true)]
-  [string]$CallbackUrl,
-
-  [Parameter(Mandatory=$true)]
-  [string]$Nonce,
-
-  [Parameter(Mandatory=$true)]
-  [string]$SigningKey,
+  [Parameter(Mandatory=$false)]
+  [int]$Days = 30,
 
   [Parameter(Mandatory=$false)]
-  [string]$Token
+  [string]$RunId = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,19 +34,19 @@ function Fail([string]$Message) {
   exit 1
 }
 
-if ($Days -notin @(30,60,90)) { Fail "Days must be one of: 30, 60, 90" }
-if ([string]::IsNullOrWhiteSpace($ClientName)) { Fail "ClientName is required" }
-if ([string]::IsNullOrWhiteSpace($CallbackUrl)) { Fail "CallbackUrl is required" }
-if ([string]::IsNullOrWhiteSpace($Nonce)) { Fail "Nonce is required" }
-if ([string]::IsNullOrWhiteSpace($SigningKey)) { Fail "SigningKey is required" }
-
-try {
-  # Ensure URL is sane
-  $u = [Uri]$CallbackUrl
-  if ($u.Scheme -notin @('http','https')) { Fail "CallbackUrl must be http/https" }
-} catch {
-  Fail "CallbackUrl is not a valid URI"
+$NinjaPropertySet = Get-Command -Name 'Ninja-Property-Set' -ErrorAction SilentlyContinue
+if (-not $NinjaPropertySet) {
+  Fail "Ninja-Property-Set is not available in this environment."
 }
+
+# Some runners may pass Days as empty/0; enforce the hard default.
+if (-not $Days) { $Days = 30 }
+
+if ($Days -notin @(30,60,90)) { Fail "Days must be one of: 30, 60, 90" }
+if ([string]::IsNullOrWhiteSpace($RunId)) { $RunId = [guid]::NewGuid().ToString('N') }
+
+# Target NinjaOne custom field name (hardcoded)
+$CustomFieldName = 'ADInventoryJson'
 
 # Try to load AD module
 try {
@@ -96,7 +83,8 @@ try {
   Fail "Get-ADComputer failed: $($_.Exception.Message)"
 }
 
-$results = New-Object System.Collections.Generic.List[object]
+# Store only computer names to keep the payload small enough for Ninja custom field limits.
+$results = New-Object System.Collections.Generic.List[string]
 
 foreach ($c in $computers) {
   $name = $c.Name
@@ -112,42 +100,26 @@ foreach ($c in $computers) {
   }
 
   if ($dt -ge $cutoff) {
-    $results.Add([pscustomobject]@{
-      name = $name
-      lastLogonTimestamp = [Int64]$llt
-      lastSeenUtc = $dt.ToString('o')
-    })
+    $results.Add([string]$name)
   }
 }
 
 $payload = [pscustomobject]@{
-  client = $ClientName
   days = $Days
+  runId = $RunId
+  generatedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
   workstations = $results
 }
 
 $json = $payload | ConvertTo-Json -Depth 6
 
-$hmac = New-Object System.Security.Cryptography.HMACSHA256 ([Text.Encoding]::UTF8.GetBytes($SigningKey))
-$sigBytes = $hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($json))
-$signature = ($sigBytes | ForEach-Object { $_.ToString('x2') }) -join ''
-
-$headers = @{ 
-  'X-AD-Intake-Nonce' = $Nonce
-  'X-AD-Intake-Signature' = $signature
+# Ninja custom fields can have size limits; keep the payload safe.
+# Many tenants enforce ~10,000 characters on text fields.
+$maxLen = 9500
+$valueToStore = $json
+if ($valueToStore.Length -gt $maxLen) {
+  $valueToStore = ($valueToStore.Substring(0, $maxLen) + "\n...TRUNCATED...")
 }
 
-# Legacy optional header
-if (-not [string]::IsNullOrWhiteSpace($Token)) {
-  $headers['X-AD-Intake-Token'] = $Token
-}
-
-try {
-  # If your environment has strict TLS defaults, uncomment the next line:
-  # [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-  Invoke-RestMethod -Method POST -Uri $CallbackUrl -Headers $headers -ContentType 'application/json' -Body $json -TimeoutSec 60 | Out-Null
-  Write-Host "AD inventory sent successfully: $($results.Count) computers (>= $Days days)"
-} catch {
-  Fail "Failed to POST to CallbackUrl: $($_.Exception.Message)"
-}
+Ninja-Property-Set -Name $CustomFieldName -Value $valueToStore -ErrorAction Stop | Out-Null
+Write-Host "AD inventory stored in NinjaOne custom field '$CustomFieldName': $($results.Count) computers (>= $Days days)"

@@ -9,6 +9,7 @@ import time
 import logging
 import json
 import requests
+from datetime import datetime, timezone
 import base64
 import secrets
 import hmac
@@ -36,7 +37,10 @@ _NINJA_TOKEN_CACHE = {
 # Key: (client_name, days) -> {path, count, received_at}
 _AD_CACHE = {}
 
-# One-time nonces for AD intake (minted per /ad/trigger).
+# AD inventory storage (written by the Ninja-run PowerShell script)
+_AD_CUSTOM_FIELD_NAME = 'ADInventoryJson'
+
+# One-time nonces for AD intake (legacy; kept for backwards compatibility)
 # Key: nonce -> {client, days, signing_key, expires_at}
 _AD_INTAKE_NONCES = {}
 _AD_INTAKE_NONCE_TTL_SECONDS = 15 * 60
@@ -47,6 +51,58 @@ def _prune_ad_intake_nonces(now=None):
     expired = [t for t, v in _AD_INTAKE_NONCES.items() if v.get('expires_at', 0) <= now]
     for t in expired:
         _AD_INTAKE_NONCES.pop(t, None)
+
+
+def _fetch_with_retry(url, headers=None, auth=None, params=None, timeout=30, max_retries=3):
+    """
+    Fetch URL with retry logic and exponential backoff.
+    Handles transient failures and rate limiting.
+    """
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, headers=headers, auth=auth, params=params, timeout=timeout)
+            
+            # Success
+            if response.status_code == 200:
+                return response
+            
+            # Rate limited - use exponential backoff
+            if response.status_code == 429:
+                wait_time = (2 ** attempt) * 1  # 1s, 2s, 4s
+                logger.warning(f"Rate limited on {url}, waiting {wait_time}s before retry {attempt + 1}/{max_retries}")
+                if attempt < max_retries - 1:
+                    time.sleep(wait_time)
+                    continue
+            
+            # Other errors - return immediately on last attempt
+            if attempt == max_retries - 1:
+                return response
+            
+            # Retry on 5xx errors
+            if response.status_code >= 500:
+                wait_time = (2 ** attempt) * 0.5  # 0.5s, 1s, 2s
+                logger.warning(f"Server error {response.status_code} on {url}, retrying in {wait_time}s")
+                time.sleep(wait_time)
+                continue
+            
+            # Don't retry on 4xx errors (except 429)
+            return response
+            
+        except requests.exceptions.Timeout:
+            if attempt == max_retries - 1:
+                raise
+            wait_time = (2 ** attempt) * 0.5
+            logger.warning(f"Timeout on {url}, retrying in {wait_time}s")
+            time.sleep(wait_time)
+        except requests.exceptions.RequestException as e:
+            if attempt == max_retries - 1:
+                raise
+            wait_time = (2 ** attempt) * 0.5
+            logger.warning(f"Request error on {url}: {e}, retrying in {wait_time}s")
+            time.sleep(wait_time)
+    
+    # Should not reach here, but return last response if we do
+    return response
 
 
 def fix_encoding(value):
@@ -85,34 +141,57 @@ def fix_encoding(value):
     return value
 
 
-def normalize_value(value):
+def normalize_value(value, log_transformations=False):
     """
     Normalize a value for comparison by:
     - Converting to lowercase
     - Removing common suffixes (.local, .lan, .home, etc.)
     - Replacing spaces, hyphens, underscores with nothing
     - Removing apostrophes and special characters
+    
+    Args:
+        value: The value to normalize
+        log_transformations: If True, log normalization steps for debugging
     """
     if not value:
         return ''
     
+    original = value
+    
     # Fix encoding first
     value = fix_encoding(value)
+    if log_transformations and value != original:
+        logger.debug(f"Encoding fix: '{original}' -> '{value}'")
     
     # Convert to lowercase
     normalized = value.lower().strip()
+    if log_transformations and normalized != value:
+        logger.debug(f"Lowercase: '{value}' -> '{normalized}'")
     
     # Remove common network suffixes
     suffixes = ['.local', '.lan', '.home', '.internal', '.localdomain', '.domain']
     for suffix in suffixes:
         if normalized.endswith(suffix):
+            before = normalized
             normalized = normalized[:-len(suffix)]
+            if log_transformations:
+                logger.debug(f"Suffix removal ({suffix}): '{before}' -> '{normalized}'")
+            break
     
     # Remove apostrophes and common special characters
+    before = normalized
     normalized = re.sub(r"['\"`]", '', normalized)
+    if log_transformations and normalized != before:
+        logger.debug(f"Special char removal: '{before}' -> '{normalized}'")
     
     # Replace spaces, hyphens, underscores, dots with nothing (normalize separators)
+    before = normalized
     normalized = re.sub(r'[\s\-_\.]+', '', normalized)
+    if log_transformations and normalized != before:
+        logger.debug(f"Separator removal: '{before}' -> '{normalized}'")
+    
+    if log_transformations and normalized != original:
+        logger.info(f"Normalization complete: '{original}' -> '{normalized}'")
     
     return normalized
 
@@ -219,7 +298,7 @@ def _get_ninja_auth(api_url):
                 'grant_type': 'client_credentials',
                 'client_id': client_id,
                 'client_secret': client_secret,
-                'scope': os.getenv('NINJARMM_OAUTH_SCOPE', 'monitoring')
+                'scope': os.getenv('NINJARMM_OAUTH_SCOPE', 'monitoring management')
             },
             headers={'Content-Type': 'application/x-www-form-urlencoded'},
             timeout=30
@@ -248,7 +327,7 @@ def _get_ninja_auth(api_url):
     raise ValueError('NinjaRMM API credentials not configured.')
 
 
-def _lookup_ninja_script_uid(api_url, headers, auth, script_id):
+def _lookup_ninja_script_uid(api_url, headers, auth, script_id, device_id=None):
     """Best-effort lookup of a script UID for a numeric script_id.
 
     Some Ninja endpoints require/accept a `uid` field when running scripts; providing it can avoid
@@ -263,6 +342,7 @@ def _lookup_ninja_script_uid(api_url, headers, auth, script_id):
     for endpoint in possible_endpoints:
         try:
             r = requests.get(endpoint, headers=headers, auth=auth, timeout=15)
+            logger.debug('Script UID lookup: endpoint=%s status=%s', endpoint, r.status_code)
             if r.status_code != 200:
                 continue
 
@@ -278,8 +358,10 @@ def _lookup_ninja_script_uid(api_url, headers, auth, script_id):
                 )
 
             if not isinstance(data, list):
+                logger.debug('Script UID lookup: endpoint=%s returned non-list data type=%s', endpoint, type(data))
                 continue
 
+            logger.debug('Script UID lookup: endpoint=%s returned %d scripts', endpoint, len(data))
             for s in data:
                 if not isinstance(s, dict):
                     continue
@@ -292,10 +374,42 @@ def _lookup_ninja_script_uid(api_url, headers, auth, script_id):
 
                 uid = s.get('uid') or s.get('scriptUid')
                 if uid:
+                    logger.info('Script UID found via %s: script_id=%s uid=%s', endpoint, script_id, uid)
                     return uid
-        except Exception:
+                else:
+                    # Found the script but it has no UID - log available fields
+                    logger.warning('Script found but no UID: script_id=%s available_fields=%s', script_id, list(s.keys()))
+        except Exception as e:
+            logger.debug('Script UID lookup: endpoint=%s error=%s', endpoint, str(e))
             continue
 
+    # Alternative: try device-specific scripting options endpoint if device_id provided
+    if device_id:
+        try:
+            scripting_opts_endpoint = f'{api_url}/v2/device/{device_id}/scripting/options'
+            r = requests.get(scripting_opts_endpoint, headers=headers, auth=auth, timeout=15)
+            logger.debug('Script UID lookup via scripting options: status=%s', r.status_code)
+            if r.status_code == 200:
+                opts = r.json()
+                for s in (opts.get('scripts') or []):
+                    if not isinstance(s, dict):
+                        continue
+                    sid = s.get('id')
+                    try:
+                        if int(sid) != int(script_id):
+                            continue
+                    except Exception:
+                        continue
+                    uid = s.get('uid') or s.get('scriptUid')
+                    if uid:
+                        logger.info('Script UID found via scripting options: script_id=%s uid=%s', script_id, uid)
+                        return uid
+                    else:
+                        logger.warning('Script in scripting options has no UID: script_id=%s fields=%s', script_id, list(s.keys()))
+        except Exception as e:
+            logger.debug('Script UID lookup via scripting options error: %s', str(e))
+
+    logger.warning('Script UID not found for script_id=%s (tried all endpoints)', script_id)
     return None
 
 
@@ -335,7 +449,86 @@ def _format_ninja_parameters_space_separated(params: dict) -> str:
         else:
             parts.append(f'{k} {v}')
     return " ".join(parts)
-    return " ".join(parts)
+
+
+def _extract_ninja_custom_field(device_data, field_name: str):
+    """Best-effort extraction of a custom field value from a Ninja device payload."""
+    if not isinstance(device_data, dict) or not field_name:
+        return None
+
+    # Direct key (rare)
+    for k, v in device_data.items():
+        if isinstance(k, str) and k.lower() == field_name.lower():
+            return v
+
+    for key in ('customFields', 'custom_fields', 'fields', 'properties'):
+        blob = device_data.get(key)
+        if isinstance(blob, dict):
+            for k, v in blob.items():
+                if isinstance(k, str) and k.lower() == field_name.lower():
+                    return v
+        elif isinstance(blob, list):
+            for it in blob:
+                if not isinstance(it, dict):
+                    continue
+                name = it.get('name') or it.get('fieldName') or it.get('key') or it.get('label')
+                if isinstance(name, str) and name.lower() == field_name.lower():
+                    return it.get('value')
+
+    # One-level deep scan
+    for v in device_data.values():
+        if isinstance(v, dict):
+            found = _extract_ninja_custom_field(v, field_name)
+            if found is not None:
+                return found
+
+    return None
+
+
+def _get_ninja_device_custom_field(api_url, headers, auth, device_id: int, field_name: str):
+    endpoints = [
+        f'{api_url}/api/v2/device/{device_id}',
+        f'{api_url}/v2/device/{device_id}',
+        f'{api_url}/v2/devices/{device_id}',
+    ]
+    for endpoint in endpoints:
+        try:
+            r = requests.get(endpoint, headers=headers, auth=auth, timeout=15)
+            if r.status_code != 200:
+                continue
+            payload = r.json()
+            value = _extract_ninja_custom_field(payload, field_name)
+            if value is None:
+                continue
+            if isinstance(value, (dict, list)):
+                return json.dumps(value)
+            return str(value)
+        except Exception:
+            continue
+    return None
+
+
+def _get_ninja_organization_custom_field(api_url, headers, auth, org_id: int, field_name: str):
+    endpoints = [
+        f'{api_url}/api/v2/organization/{org_id}',
+        f'{api_url}/v2/organization/{org_id}',
+        f'{api_url}/v2/organizations/{org_id}',
+    ]
+    for endpoint in endpoints:
+        try:
+            r = requests.get(endpoint, headers=headers, auth=auth, timeout=15)
+            if r.status_code != 200:
+                continue
+            payload = r.json()
+            value = _extract_ninja_custom_field(payload, field_name)
+            if value is None:
+                continue
+            if isinstance(value, (dict, list)):
+                return json.dumps(value)
+            return str(value)
+        except Exception:
+            continue
+    return None
 
 
 def read_excel_file(filepath):
@@ -554,9 +747,11 @@ def compare_columns():
         
         # Prefix matching for 15-char truncation (NinjaRMM limitation)
         # Check if any unmatched item from file1 matches the first 15 chars of an unmatched item from file2, or vice versa
+        # Minimum length threshold prevents false positives on very short hostnames
         prefix_matches = []  # List of (file1_value, file2_value) tuples
         matched_from_file1 = set()
         matched_from_file2 = set()
+        min_prefix_length = 10  # Avoid matching very short names that could be coincidental
         
         for norm1 in list(only_in_file1_norm):
             orig1 = norm_to_orig1[norm1]
@@ -568,16 +763,19 @@ def compare_columns():
                 orig2 = norm_to_orig2[norm2]
                 prefix2 = norm2[:15] if len(norm2) > 15 else norm2
                 
-                # Check if one is a prefix of the other (handles truncation)
-                if prefix1 == prefix2 or norm1.startswith(norm2) or norm2.startswith(norm1):
-                    prefix_matches.append({
-                        'file1': orig1,
-                        'file2': orig2,
-                        'matched_on': 'prefix'
-                    })
-                    matched_from_file1.add(norm1)
-                    matched_from_file2.add(norm2)
-                    break
+                # Only match if both names are long enough to avoid false positives
+                if len(norm1) >= min_prefix_length and len(norm2) >= min_prefix_length:
+                    # Check if one is a prefix of the other (handles truncation)
+                    if prefix1 == prefix2 or norm1.startswith(norm2) or norm2.startswith(norm1):
+                        prefix_matches.append({
+                            'file1': orig1,
+                            'file2': orig2,
+                            'matched_on': 'prefix'
+                        })
+                        matched_from_file1.add(norm1)
+                        matched_from_file2.add(norm2)
+                        logger.debug(f"Prefix match: '{orig1}' <-> '{orig2}' (normalized: '{norm1}' <-> '{norm2}')")
+                        break
         
         # Remove prefix-matched items from only_in lists
         only_in_file1_norm -= matched_from_file1
@@ -1091,17 +1289,11 @@ def get_unified_clients():
         except Exception as e:
             logger.warning("Error fetching Ninja orgs: %s", e)
     
-    # Match clients by normalized name
-    def normalize_name(name):
-        """Normalize name for matching: lowercase, remove special chars, trim whitespace."""
-        normalized = name.lower().strip()
-        normalized = re.sub(r'[^\w\s]', '', normalized)  # Remove special characters
-        normalized = re.sub(r'\s+', ' ', normalized)  # Normalize whitespace
-        return normalized
-    
+    # Match clients by normalized name using the same normalization logic as device comparison
+    # This ensures consistent matching behavior across the application
     # Create lookup maps
-    s1_by_norm = {normalize_name(site['name']): site for site in s1_sites}
-    ninja_by_norm = {normalize_name(org['name']): org for org in ninja_orgs}
+    s1_by_norm = {normalize_value(site['name']): site for site in s1_sites}
+    ninja_by_norm = {normalize_value(org['name']): org for org in ninja_orgs}
     
     # Match clients
     matched_clients = []
@@ -1316,7 +1508,7 @@ def run_ninjarmm_script():
         # Prepare script execution payload
         # Ninja expects fields like: id/type/uid/runAs/parameters (not scriptId)
         # Note: Ninja expects parameters as a string.
-        script_uid = _lookup_ninja_script_uid(api_url, headers, auth, script_id)
+        script_uid = _lookup_ninja_script_uid(api_url, headers, auth, script_id, device_id=device_id)
 
         payload = {
             'id': script_id,
@@ -1377,12 +1569,10 @@ def run_ninjarmm_script():
 
 @app.route('/ad/trigger', methods=['POST'])
 def trigger_ad_inventory():
-    """Trigger a NinjaRMM script to inventory Active Directory computers and POST results back to /ad/intake."""
+    """Trigger a NinjaRMM script to inventory Active Directory computers, then pull results from a custom field."""
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err
-
-    _prune_ad_intake_nonces()
 
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict):
@@ -1390,6 +1580,7 @@ def trigger_ad_inventory():
 
     client = (data.get('client') or '').strip()
     days = data.get('days')
+    org_id = data.get('org_id')
     device_id = data.get('device_id')
     script_id = data.get('script_id')
 
@@ -1404,126 +1595,196 @@ def trigger_ad_inventory():
     if days not in (30, 60, 90):
         return jsonify({'error': 'days must be one of: 30, 60, 90'}), 400
 
-    # Mint a one-time nonce + signing key for this AD request.
-    # The signing key is passed to the script runner but is NOT sent back on the callback.
-    nonce = secrets.token_urlsafe(32)
-    signing_key = secrets.token_urlsafe(32)
-    _AD_INTAKE_NONCES[nonce] = {
-        'client': client,
-        'days': days,
-        'signing_key': signing_key,
-        'expires_at': time.time() + _AD_INTAKE_NONCE_TTL_SECONDS,
-    }
-
     try:
+        org_id = int(org_id)
         device_id = int(device_id)
         script_id = int(script_id)
     except Exception:
-        return jsonify({'error': 'device_id and script_id must be integers'}), 400
+        return jsonify({'error': 'org_id, device_id, and script_id must be integers'}), 400
 
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
 
-    callback_url = (os.getenv('AD_CALLBACK_URL') or '').strip() or (request.host_url.rstrip('/') + '/ad/intake')
-
-    # Parameters are passed through to Ninja; your script should accept these.
     # Clean client name: remove emojis/non-ASCII, extra whitespace, newlines
-    clean_client = ' '.join(client.split())  # Remove extra whitespace/newlines first
-    clean_client = clean_client.encode('ascii', 'ignore').decode('ascii').strip()  # Remove emojis/non-ASCII
+    clean_client = ' '.join(client.split())
+    clean_client = clean_client.encode('ascii', 'ignore').decode('ascii').strip()
+
+    run_id = uuid.uuid4().hex
+    started_at = time.time()
+
     script_params = {
         'Days': days,
-        'ClientName': clean_client,
-        'CallbackUrl': callback_url,
-        'Nonce': nonce,
-        'SigningKey': signing_key,
+        'RunId': run_id,
     }
 
     if client != clean_client:
         logger.info('Client name sanitized: "%s" -> "%s"', client, clean_client)
-    logger.info('Triggering AD inventory via Ninja: client=%s days=%s device_id=%s script_id=%s', clean_client, days, device_id, script_id)
+    logger.info('Triggering AD inventory via Ninja: client=%s days=%s org_id=%s device_id=%s script_id=%s', clean_client, days, org_id, device_id, script_id)
 
     try:
-        headers, auth = _get_ninja_auth(api_url)
+        # Get authentication headers
+        try:
+            logger.info('Attempting NinjaRMM auth to: %s', api_url)
+            headers, auth = _get_ninja_auth(api_url)
+            logger.info('NinjaRMM auth successful')
+        except Exception as e:
+            logger.error('Failed to get NinjaRMM auth: %s', str(e), exc_info=True)
+            return jsonify({'error': f'NinjaRMM authentication failed: {str(e)}'}), 500
+        
         headers = {**headers, 'Content-Type': 'application/json'}
 
-        script_uid = _lookup_ninja_script_uid(api_url, headers, auth, script_id)
-        logger.info('Script UID lookup: script_id=%s uid=%s', script_id, script_uid)
+        # Try to get previous custom field values (non-critical, continue on failure)
+        previous_org_value = None
+        previous_device_value = None
+        try:
+            previous_org_value = _get_ninja_organization_custom_field(api_url, headers, auth, org_id, _AD_CUSTOM_FIELD_NAME)
+            previous_device_value = _get_ninja_device_custom_field(api_url, headers, auth, device_id, _AD_CUSTOM_FIELD_NAME)
+        except Exception as e:
+            logger.warning('Failed to get previous custom field values: %s', str(e))
 
+        # Try to lookup script UID (non-critical, continue on failure)
+        script_uid = None
+        try:
+            script_uid = _lookup_ninja_script_uid(api_url, headers, auth, script_id, device_id=device_id)
+            logger.info('Script UID lookup: script_id=%s uid=%s', script_id, script_uid)
+        except Exception as e:
+            logger.warning('Script UID lookup failed: %s', str(e), exc_info=True)
+
+        # Only use runAs if explicitly configured via environment variable
+        # Otherwise, let NinjaRMM use its default (typically SYSTEM)
         run_as = (os.getenv('NINJARMM_SCRIPT_RUN_AS') or '').strip()
 
-        # Some Ninja tenants are picky about the script-run payload/parameter format and/or fields.
-        # We try multiple parameter encodings and payload shapes to work around tenant-specific quirks.
-        param_variants = [
-            ('no_params', None),  # Try without parameters first to isolate NPE issue
-            ('space_no_dash', _format_ninja_parameters_space_separated(script_params)),  # Days "30" ClientName "..." (no dashes)
-            ('powershell', _format_ninja_parameters_powershell(script_params)),  # -Days 30 -ClientName "..." (with dashes)
-            ('kv_lines', _format_ninja_parameters_kv_lines(script_params)),
-            ('json', json.dumps(script_params, separators=(',', ':')))
-        ]
+        # Build payload - no parameters, let the script use defaults
+        payload = {
+            'id': script_id,
+            'type': 'SCRIPT',
+        }
+        if script_uid:
+            payload['uid'] = script_uid
+        if run_as:
+            payload['runAs'] = run_as
 
-        # Endpoints to try: /v2 first (per OpenAPI spec), then /api/v2 fallback  
-        endpoints = [
-            f'{api_url}/v2/device/{device_id}/script/run',
-            f'{api_url}/api/v2/device/{device_id}/script/run',
-        ]
+        # Use the documented endpoint
+        endpoint = f'{api_url}/v2/device/{device_id}/script/run'
+        
+        # Ensure Content-Type is set
+        request_headers = {**headers, 'Content-Type': 'application/json'}
+        
+        logger.info('Triggering script: endpoint=%s payload=%s', endpoint, payload)
+        try:
+            last_resp = requests.post(endpoint, json=payload, headers=request_headers, auth=auth, timeout=30)
+            logger.info('Script run response: status=%s body=%s', last_resp.status_code, last_resp.text[:500])
+        except requests.exceptions.RequestException as e:
+            logger.error('Script run request failed: %s', str(e), exc_info=True)
+            return jsonify({'error': f'NinjaRMM API connection error: {str(e)}'}), 500
 
-        last_resp = None
-        last_variant = None
-        last_endpoint = None
-        attempts = []
+        if last_resp.status_code in (200, 204):
+            # Poll the organization custom field for results with adaptive intervals
+            try:
+                timeout_s = int(os.getenv('AD_CUSTOM_FIELD_POLL_TIMEOUT_SECONDS', '120'))
+            except Exception:
+                timeout_s = 120
+            
+            # Adaptive polling: start fast, then slow down (2s, 2s, 4s, 4s, 8s, 8s...)
+            poll_attempt = 0
+            deadline = time.time() + timeout_s
+            last_seen = None
 
-        for endpoint in endpoints:
-            for param_name, parameters_str in param_variants:
-                last_endpoint = endpoint
-                last_variant = param_name
+            while time.time() < deadline:
+                # Calculate adaptive interval: 2s for first 2 attempts, then exponential
+                poll_interval_s = min(2 ** (poll_attempt // 2), 8)  # Cap at 8 seconds
+                time.sleep(poll_interval_s)
+                poll_attempt += 1
 
-                # Match n8n-nodes-ninja-one payload format exactly: id first, then type, then parameters
-                payload = {
-                    'id': script_id,
-                    'type': 'SCRIPT',
-                }
-                # Only include parameters if non-empty
-                if parameters_str:
-                    payload['parameters'] = parameters_str
-                if run_as:
-                    payload['runAs'] = run_as
+                # Prefer org-scoped field, but fall back to device-scoped field.
+                org_value = _get_ninja_organization_custom_field(api_url, headers, auth, org_id, _AD_CUSTOM_FIELD_NAME)
+                device_value = _get_ninja_device_custom_field(api_url, headers, auth, device_id, _AD_CUSTOM_FIELD_NAME)
 
-                logger.info('Trying Ninja script-run: endpoint=%s variant=%s payload=%s', last_endpoint, last_variant, payload)
-                logger.info('Request headers: %s', {k: v for k, v in headers.items() if k.lower() not in ['authorization']})
-                try:
-                    last_resp = requests.post(endpoint, json=payload, headers=headers, auth=auth, timeout=30)
-                    logger.info('Response headers: %s', dict(last_resp.headers))
-                    logger.info('Ninja script-run response: variant=%s status=%s body=%s', last_variant, last_resp.status_code, last_resp.text[:300])
-                except requests.exceptions.RequestException as e:
-                    logger.warning('Ninja script-run request failed: variant=%s endpoint=%s error=%s', last_variant, last_endpoint, str(e))
-                    last_resp = None
+                candidates = []
+                if org_value and (previous_org_value is None or org_value != previous_org_value):
+                    candidates.append(org_value)
+                if device_value and (previous_device_value is None or device_value != previous_device_value):
+                    candidates.append(device_value)
+
+                if not candidates:
                     continue
 
-                attempts.append({
-                    'variant': last_variant,
-                    'endpoint': last_endpoint,
-                    'status': last_resp.status_code,
-                    'body': (last_resp.text or '')[:200]
-                })
+                # Avoid re-processing the same candidate value.
+                value = candidates[0]
+                if last_seen is not None and value == last_seen:
+                    continue
+                last_seen = value
 
-                if last_resp.status_code in (200, 204):
-                    logger.info('Ninja script-run succeeded: variant=%s status=%s', last_variant, last_resp.status_code)
-                    return jsonify({'success': True, 'message': 'AD inventory triggered'})
+                if '...TRUNCATED...' in value:
+                    return jsonify({'error': f"AD payload in Ninja custom field '{_AD_CUSTOM_FIELD_NAME}' was truncated."}), 500
 
-                # Retry only on server-side errors and "not found" (endpoint/resource may differ per tenant).
-                retryable = {500, 404}
-                if last_resp.status_code not in retryable:
-                    logger.warning('Ninja script-run non-retryable error: variant=%s status=%s body=%s', last_variant, last_resp.status_code, last_resp.text[:200])
-                    return jsonify({
-                        'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}',
-                        'attempts': attempts[-10:]
-                    }), last_resp.status_code
+                try:
+                    parsed = json.loads(value)
+                except Exception:
+                    continue
 
-        logger.error('Ninja script-run exhausted all attempts: last_variant=%s last_status=%s attempts=%s', last_variant, last_resp.status_code if last_resp else 'none', len(attempts))
-        if not last_resp:
-            return jsonify({'error': 'All Ninja script-run endpoints failed (connection error)', 'attempts': attempts[-10:]}), 500
+                if not isinstance(parsed, dict):
+                    continue
+
+                if str(parsed.get('runId') or '').strip() != run_id:
+                    continue
+
+                gen = str(parsed.get('generatedAtUtc') or '').strip()
+                try:
+                    gen_dt = datetime.fromisoformat(gen.replace('Z', '+00:00'))
+                    if gen_dt.tzinfo is None:
+                        gen_dt = gen_dt.replace(tzinfo=timezone.utc)
+                    if gen_dt.timestamp() < (started_at - 5):
+                        continue
+                except Exception:
+                    continue
+
+                try:
+                    parsed_days = int(parsed.get('days') or 0)
+                except Exception:
+                    parsed_days = 0
+
+                if parsed_days != days:
+                    continue
+
+                items = parsed.get('workstations') or parsed.get('computers') or []
+                if not isinstance(items, list):
+                    continue
+
+                names = []
+                for it in items:
+                    if isinstance(it, dict):
+                        name = it.get('name')
+                    else:
+                        name = it
+                    if name:
+                        names.append(fix_encoding(name).strip())
+                names = [n for n in names if n]
+
+                uploads_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
+                filename = f'ad_computers_{uuid.uuid4().hex}.xlsx'
+                filepath = os.path.join(uploads_root, filename)
+
+                df = pd.DataFrame({'Computer Name': names})
+                df.to_excel(filepath, index=False, engine='openpyxl')
+
+                entry = {
+                    'path': filepath,
+                    'count': len(names),
+                    'received_at': int(time.time()),
+                }
+                _AD_CACHE[(client, days)] = entry
+                if clean_client and clean_client != client:
+                    _AD_CACHE[(clean_client, days)] = entry
+
+                logger.info(f"AD inventory received after {poll_attempt} poll attempts")
+                return jsonify({'success': True, 'message': 'AD inventory received', 'count': len(names)})
+
+            logger.warning(f"AD inventory timed out after {poll_attempt} poll attempts over {timeout_s}s")
+            return jsonify({'error': 'Timed out waiting for AD results in Ninja custom field'}), 504
+
+        # Script run failed
         return jsonify({
-            'error': f'NinjaRMM API error ({last_variant} @ {last_endpoint}): {last_resp.status_code} {last_resp.text[:200]}',
-            'attempts': attempts[-10:]
+            'error': f'NinjaRMM API error: {last_resp.status_code} {last_resp.text[:200]}'
         }), last_resp.status_code
 
     except requests.exceptions.Timeout:
@@ -1618,6 +1879,52 @@ def ad_debug():
                 result['device_error'] = 'Device not found (404 on all endpoints)'
         except ValueError:
             result['device_error'] = 'device_id must be an integer'
+    
+    # Fetch scripting options for the device (if device is valid)
+    if result['device_valid'] and device_id:
+        try:
+            device_id_int = int(device_id)
+            scripting_opts_endpoint = f'{api_url}/v2/device/{device_id_int}/scripting/options'
+            r = requests.get(scripting_opts_endpoint, headers=headers, auth=auth, timeout=10)
+            if r.status_code == 200:
+                opts = r.json()
+                # Handle credentials - API may return nested structure with 'roles' and 'credentials' keys
+                credentials_data = opts.get('credentials') or {}
+                run_as_options = []
+                
+                # If it's a dict with nested structure, extract the actual credentials
+                if isinstance(credentials_data, dict):
+                    # Get roles
+                    for role in (credentials_data.get('roles') or []):
+                        if isinstance(role, dict):
+                            run_as_options.append(role.get('name') or role.get('id') or str(role))
+                        else:
+                            run_as_options.append(str(role))
+                    # Get named credentials
+                    for cred in (credentials_data.get('credentials') or []):
+                        if isinstance(cred, dict):
+                            run_as_options.append(cred.get('name') or cred.get('id') or str(cred))
+                        else:
+                            run_as_options.append(str(cred))
+                elif isinstance(credentials_data, list):
+                    for c in credentials_data:
+                        if isinstance(c, dict):
+                            run_as_options.append(c.get('name') or c.get('id') or str(c))
+                        else:
+                            run_as_options.append(str(c))
+                
+                result['scripting_options'] = {
+                    'runAsOptions': run_as_options,
+                    'scriptsAvailable': len(opts.get('scripts') or []),
+                    'actionsAvailable': len(opts.get('actions') or []),
+                    'raw_response_keys': list(opts.keys()) if isinstance(opts, dict) else str(type(opts)),
+                    'credentials_type': str(type(credentials_data)),
+                    'credentials_keys': list(credentials_data.keys()) if isinstance(credentials_data, dict) else None,
+                }
+            else:
+                result['scripting_options_error'] = f'Failed to fetch: {r.status_code}'
+        except Exception as e:
+            result['scripting_options_error'] = str(e)
 
     # Validate script_id
     if script_id:
