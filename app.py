@@ -14,7 +14,8 @@ import base64
 import secrets
 import hmac
 import hashlib
-from flask import Flask, render_template, request, jsonify, session, Response
+from urllib.parse import urlencode
+from flask import Flask, render_template, request, jsonify, session, Response, redirect, url_for
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import pandas as pd
@@ -29,9 +30,14 @@ logger = logging.getLogger(__name__)
 # Simple in-process cache for Ninja OAuth tokens
 _NINJA_TOKEN_CACHE = {
     'access_token': None,
+    'refresh_token': None,
     'expires_at': 0,
     'api_url': None,
+    'grant_type': None,  # 'client_credentials' or 'authorization_code'
 }
+
+# State parameter for OAuth authorization code flow (CSRF protection)
+_NINJA_OAUTH_STATE = {}
 
 # In-process cache for Active Directory device snapshots received from Ninja
 # Key: (client_name, days) -> {path, count, received_at}
@@ -282,9 +288,12 @@ def _get_ninja_auth(api_url):
     client_secret = os.getenv('NINJARMM_CLIENT_SECRET')
     api_key = os.getenv('NINJARMM_API_KEY')
     api_secret = os.getenv('NINJARMM_API_SECRET')
+    grant_type = os.getenv('NINJARMM_OAUTH_GRANT_TYPE', 'client_credentials')
 
     if (client_id and client_secret):
         now = time.time()
+
+        # Check if we have a valid cached token
         if (
             _NINJA_TOKEN_CACHE.get('access_token')
             and _NINJA_TOKEN_CACHE.get('api_url') == api_url
@@ -292,8 +301,28 @@ def _get_ninja_auth(api_url):
         ):
             return ({'Accept': 'application/json', 'Authorization': f"Bearer {_NINJA_TOKEN_CACHE['access_token']}"}, None)
 
+        # For authorization_code flow, try to refresh if we have a refresh token
+        if grant_type == 'authorization_code':
+            if _NINJA_TOKEN_CACHE.get('refresh_token'):
+                try:
+                    return _refresh_ninja_token(api_url, client_id, client_secret)
+                except Exception as e:
+                    logger.warning('NinjaRMM token refresh failed: %s', e)
+                    # Clear cache so user re-authorizes
+                    _NINJA_TOKEN_CACHE.update({
+                        'access_token': None,
+                        'refresh_token': None,
+                        'expires_at': 0,
+                        'api_url': None,
+                        'grant_type': None,
+                    })
+            raise ValueError('NinjaRMM authorization required. Visit /ninjarmm/oauth/authorize to connect.')
+
+        # Client credentials flow - get new token
+        # Token requests go to app.ninjarmm.com (central OAuth server)
+        oauth_url = os.getenv('NINJARMM_OAUTH_URL', 'https://app.ninjarmm.com')
         token_response = requests.post(
-            f'{api_url}/oauth/token',
+            f'{oauth_url}/ws/oauth/token',
             data={
                 'grant_type': 'client_credentials',
                 'client_id': client_id,
@@ -315,8 +344,10 @@ def _get_ninja_auth(api_url):
 
         _NINJA_TOKEN_CACHE.update({
             'access_token': access_token,
+            'refresh_token': None,
             'expires_at': now + expires_in,
             'api_url': api_url,
+            'grant_type': 'client_credentials',
         })
 
         return ({'Accept': 'application/json', 'Authorization': f'Bearer {access_token}'}, None)
@@ -325,6 +356,51 @@ def _get_ninja_auth(api_url):
         return ({'Accept': 'application/json'}, (api_key, api_secret))
 
     raise ValueError('NinjaRMM API credentials not configured.')
+
+
+def _refresh_ninja_token(api_url, client_id, client_secret):
+    """Refresh the OAuth token using the stored refresh token."""
+    refresh_token = _NINJA_TOKEN_CACHE.get('refresh_token')
+    if not refresh_token:
+        raise ValueError('No refresh token available')
+
+    # Token refresh happens on app.ninjarmm.com (central OAuth server)
+    oauth_url = os.getenv('NINJARMM_OAUTH_URL', 'https://app.ninjarmm.com')
+
+    token_response = requests.post(
+        f'{oauth_url}/ws/oauth/token',
+        data={
+            'grant_type': 'refresh_token',
+            'refresh_token': refresh_token,
+            'client_id': client_id,
+            'client_secret': client_secret,
+        },
+        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        timeout=30
+    )
+
+    if token_response.status_code != 200:
+        raise ValueError(f"NinjaRMM token refresh failed: {token_response.status_code}")
+
+    token_json = token_response.json()
+    access_token = token_json.get('access_token')
+    new_refresh_token = token_json.get('refresh_token', refresh_token)
+    expires_in = int(token_json.get('expires_in') or 3600)
+
+    if not access_token:
+        raise ValueError('NinjaRMM token refresh failed: missing access_token')
+
+    now = time.time()
+    _NINJA_TOKEN_CACHE.update({
+        'access_token': access_token,
+        'refresh_token': new_refresh_token,
+        'expires_at': now + expires_in,
+        'api_url': api_url,
+        'grant_type': 'authorization_code',
+    })
+
+    logger.info('NinjaRMM OAuth token refreshed successfully')
+    return ({'Accept': 'application/json', 'Authorization': f'Bearer {access_token}'}, None)
 
 
 def _lookup_ninja_script_uid(api_url, headers, auth, script_id, device_id=None):
@@ -998,6 +1074,164 @@ def upload_sentinelone_data():
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
+# NinjaRMM OAuth Authorization Code Flow Routes
+# =============================================================================
+
+@app.route('/ninjarmm/oauth/authorize', methods=['GET'])
+def ninjarmm_oauth_authorize():
+    """Initiate OAuth authorization code flow - redirects user to NinjaRMM login."""
+    client_id = os.getenv('NINJARMM_CLIENT_ID')
+    redirect_uri = os.getenv('NINJARMM_OAUTH_REDIRECT_URI')
+    # OAuth authorization happens on app.ninjarmm.com (central OAuth server)
+    oauth_url = os.getenv('NINJARMM_OAUTH_URL', 'https://app.ninjarmm.com')
+    scope = os.getenv('NINJARMM_OAUTH_SCOPE', 'monitoring management offline_access')
+
+    if not client_id:
+        return jsonify({'error': 'NINJARMM_CLIENT_ID not configured'}), 500
+    if not redirect_uri:
+        return jsonify({'error': 'NINJARMM_OAUTH_REDIRECT_URI not configured'}), 500
+
+    # Generate state for CSRF protection
+    state = secrets.token_urlsafe(32)
+    _NINJA_OAUTH_STATE[state] = {
+        'created_at': time.time(),
+        'redirect_uri': redirect_uri,
+    }
+
+    # Clean up old states (older than 10 minutes)
+    now = time.time()
+    expired_states = [s for s, v in _NINJA_OAUTH_STATE.items() if now - v['created_at'] > 600]
+    for s in expired_states:
+        _NINJA_OAUTH_STATE.pop(s, None)
+
+    # Build authorization URL with proper encoding
+    params = {
+        'response_type': 'code',
+        'client_id': client_id,
+        'redirect_uri': redirect_uri,
+        'scope': scope,
+        'state': state,
+    }
+    auth_url = f"{oauth_url}/ws/oauth/authorize?{urlencode(params)}"
+
+    logger.info('Redirecting to NinjaRMM OAuth authorization: %s', auth_url)
+    return redirect(auth_url)
+
+
+@app.route('/ninjarmm/oauth/callback', methods=['GET'])
+def ninjarmm_oauth_callback():
+    """Handle OAuth callback - exchange authorization code for tokens."""
+    code = request.args.get('code')
+    state = request.args.get('state')
+    error = request.args.get('error')
+    error_description = request.args.get('error_description', '')
+
+    if error:
+        logger.error('NinjaRMM OAuth error: %s - %s', error, error_description)
+        return jsonify({'error': f'OAuth error: {error}', 'description': error_description}), 400
+
+    if not code:
+        return jsonify({'error': 'Missing authorization code'}), 400
+
+    if not state or state not in _NINJA_OAUTH_STATE:
+        return jsonify({'error': 'Invalid or expired state parameter'}), 400
+
+    state_data = _NINJA_OAUTH_STATE.pop(state)
+    redirect_uri = state_data['redirect_uri']
+
+    client_id = os.getenv('NINJARMM_CLIENT_ID')
+    client_secret = os.getenv('NINJARMM_CLIENT_SECRET')
+    api_url = os.getenv('NINJARMM_API_URL', 'https://app.ninjarmm.com')
+    # Token exchange must happen on app.ninjarmm.com (central OAuth server)
+    oauth_url = os.getenv('NINJARMM_OAUTH_URL', 'https://app.ninjarmm.com')
+
+    if not client_id or not client_secret:
+        return jsonify({'error': 'OAuth credentials not configured'}), 500
+
+    # Exchange code for tokens
+    try:
+        token_response = requests.post(
+            f'{oauth_url}/ws/oauth/token',
+            data={
+                'grant_type': 'authorization_code',
+                'code': code,
+                'redirect_uri': redirect_uri,
+                'client_id': client_id,
+                'client_secret': client_secret,
+            },
+            headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            timeout=30
+        )
+
+        if token_response.status_code != 200:
+            logger.error('NinjaRMM token exchange failed: %s %s', token_response.status_code, token_response.text[:200])
+            return jsonify({'error': f'Token exchange failed: {token_response.status_code}'}), 400
+
+        token_json = token_response.json()
+        access_token = token_json.get('access_token')
+        refresh_token = token_json.get('refresh_token')
+        expires_in = int(token_json.get('expires_in') or 3600)
+
+        if not access_token:
+            return jsonify({'error': 'No access token in response'}), 400
+
+        now = time.time()
+        _NINJA_TOKEN_CACHE.update({
+            'access_token': access_token,
+            'refresh_token': refresh_token,
+            'expires_at': now + expires_in,
+            'api_url': api_url,
+            'grant_type': 'authorization_code',
+        })
+
+        logger.info('NinjaRMM OAuth authorization successful')
+        return jsonify({
+            'success': True,
+            'message': 'NinjaRMM connected successfully',
+            'has_refresh_token': bool(refresh_token),
+            'expires_in': expires_in,
+        })
+
+    except requests.RequestException as e:
+        logger.exception('NinjaRMM token exchange request failed')
+        return jsonify({'error': f'Token exchange request failed: {str(e)}'}), 500
+
+
+@app.route('/ninjarmm/oauth/status', methods=['GET'])
+def ninjarmm_oauth_status():
+    """Check the current NinjaRMM OAuth connection status."""
+    grant_type = os.getenv('NINJARMM_OAUTH_GRANT_TYPE', 'client_credentials')
+    now = time.time()
+
+    connected = bool(
+        _NINJA_TOKEN_CACHE.get('access_token')
+        and _NINJA_TOKEN_CACHE.get('expires_at', 0) > now
+    )
+
+    return jsonify({
+        'configured_grant_type': grant_type,
+        'connected': connected,
+        'has_refresh_token': bool(_NINJA_TOKEN_CACHE.get('refresh_token')),
+        'expires_in': max(0, int(_NINJA_TOKEN_CACHE.get('expires_at', 0) - now)) if connected else 0,
+        'cached_grant_type': _NINJA_TOKEN_CACHE.get('grant_type'),
+    })
+
+
+@app.route('/ninjarmm/oauth/disconnect', methods=['POST'])
+def ninjarmm_oauth_disconnect():
+    """Clear the cached OAuth tokens (disconnect from NinjaRMM)."""
+    _NINJA_TOKEN_CACHE.update({
+        'access_token': None,
+        'refresh_token': None,
+        'expires_at': 0,
+        'api_url': None,
+        'grant_type': None,
+    })
+    logger.info('NinjaRMM OAuth tokens cleared')
+    return jsonify({'success': True, 'message': 'Disconnected from NinjaRMM'})
 
 
 @app.route('/ninjarmm/test', methods=['GET'])

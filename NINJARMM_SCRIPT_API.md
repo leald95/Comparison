@@ -14,9 +14,55 @@ The application now supports triggering scripts on specific NinjaRMM devices thr
 
 2. **API URL** configured in `.env`:
    ```
-   NINJARMM_API_URL=https://api.ninjarmm.com
+   NINJARMM_API_URL=https://yourcompany.rmmservice.com
    ```
-   (Use `https://eu-api.ninjarmm.com` for EU region)
+   (Use your NinjaRMM instance URL, e.g., `https://app.ninjarmm.com` or `https://yourcompany.rmmservice.com`)
+
+## OAuth Authentication
+
+The application supports two OAuth grant types:
+
+### Client Credentials Flow (Default)
+
+Machine-to-machine authentication. No user interaction required.
+
+```env
+NINJARMM_OAUTH_GRANT_TYPE=client_credentials
+NINJARMM_CLIENT_ID=your_client_id
+NINJARMM_CLIENT_SECRET=your_client_secret
+NINJARMM_OAUTH_SCOPE=monitoring management
+```
+
+### Authorization Code Flow
+
+User-interactive authentication. Requires user to log in via NinjaRMM.
+
+```env
+NINJARMM_OAUTH_GRANT_TYPE=authorization_code
+NINJARMM_CLIENT_ID=your_client_id
+NINJARMM_CLIENT_SECRET=your_client_secret
+NINJARMM_OAUTH_REDIRECT_URI=http://localhost:5000/ninjarmm/oauth/callback
+NINJARMM_OAUTH_SCOPE=monitoring management offline_access
+```
+
+**Note:** Include `offline_access` in the scope to receive refresh tokens.
+
+#### Authorization Code Flow Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/ninjarmm/oauth/authorize` | GET | Redirects user to NinjaRMM login page |
+| `/ninjarmm/oauth/callback` | GET | Handles OAuth callback, exchanges code for tokens |
+| `/ninjarmm/oauth/status` | GET | Returns current OAuth connection status |
+| `/ninjarmm/oauth/disconnect` | POST | Clears cached tokens (disconnect) |
+
+#### Usage Flow
+
+1. Navigate to `/ninjarmm/oauth/authorize` in your browser
+2. Log in to NinjaRMM when prompted
+3. Grant the requested permissions
+4. You'll be redirected back to the callback URL with tokens stored
+5. Check connection status via `/ninjarmm/oauth/status`
 
 ## Endpoints
 
