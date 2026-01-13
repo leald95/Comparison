@@ -294,13 +294,6 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
-
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
 def _require_csrf():
     if request.method != 'POST':
         return None
@@ -485,16 +478,6 @@ def _lookup_ninja_script_uid(api_url, headers, auth, script_id, device_id=None):
     return None
 
 
-def _format_ninja_parameters_kv_lines(params: dict) -> str:
-    # Common format expected by some Ninja script runners: key=value, one per line.
-    lines = []
-    for k, v in (params or {}).items():
-        if v is None:
-            continue
-        lines.append(f"{k}={v}")
-    return "\n".join(lines)
-
-
 def _format_ninja_parameters_powershell(params: dict) -> str:
     # PowerShell-style parameters: -ParamName "value" all on one line
     parts = []
@@ -506,20 +489,6 @@ def _format_ninja_parameters_powershell(params: dict) -> str:
             parts.append(f'-{k} "{v}"')
         else:
             parts.append(f'-{k} {v}')
-    return " ".join(parts)
-
-
-def _format_ninja_parameters_space_separated(params: dict) -> str:
-    # Space-separated without dashes: ParamName "value" ParamName2 value2
-    parts = []
-    for k, v in (params or {}).items():
-        if v is None:
-            continue
-        # Quote string values, don't quote numbers
-        if isinstance(v, str):
-            parts.append(f'{k} "{v}"')
-        else:
-            parts.append(f'{k} {v}')
     return " ".join(parts)
 
 
@@ -832,134 +801,6 @@ def index():
 @app.route('/favicon.ico')
 def favicon():
     return send_from_directory('static', 'favicon.svg', mimetype='image/svg+xml')
-
-
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    """Handle file upload and return column information."""
-    csrf_err = _require_csrf()
-    if csrf_err:
-        return csrf_err
-
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-    
-    file = request.files['file']
-    file_id = str(request.form.get('file_id', '1'))
-    
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type. Please upload .xlsx or .xls files'}), 400
-    
-    try:
-        # Generate unique filename
-        unique_id = str(uuid.uuid4())
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"{unique_id}_{filename}")
-        file.save(filepath)
-        
-        # Read Excel and get sheet/column info
-        xl = read_excel_file(filepath)
-        sheets = xl.sheet_names
-        
-        # Get columns for first sheet by default
-        df = pd.read_excel(xl, sheet_name=sheets[0])
-        columns = df.columns.tolist()
-        
-        # Store filepath in session
-        if 'files' not in session:
-            session['files'] = {}
-        session['files'][file_id] = filepath
-        session.modified = True
-        
-        return jsonify({
-            'success': True,
-            'filename': filename,
-            'sheets': sheets,
-            'columns': columns,
-            'row_count': len(df)
-        })
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/get_columns', methods=['POST'])
-def get_columns():
-    """Get columns for a specific sheet."""
-    csrf_err = _require_csrf()
-    if csrf_err:
-        return csrf_err
-
-    data = request.json
-    file_id = data.get('file_id')
-    file_id = str(file_id) if file_id is not None else None
-    sheet_name = data.get('sheet_name')
-    
-    if 'files' not in session or file_id not in session['files']:
-        return jsonify({'error': 'File not found. Please upload again.'}), 400
-    
-    try:
-        filepath = session['files'][file_id]
-        df = pd.read_excel(filepath, sheet_name=sheet_name)
-        columns = df.columns.tolist()
-        
-        return jsonify({
-            'success': True,
-            'columns': columns,
-            'row_count': len(df)
-        })
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/preview_column', methods=['POST'])
-def preview_column():
-    """Get preview data for a specific column."""
-    csrf_err = _require_csrf()
-    if csrf_err:
-        return csrf_err
-
-    data = request.json
-    file_id = data.get('file_id')
-    file_id = str(file_id) if file_id is not None else None
-    sheet_name = data.get('sheet_name')
-    column_name = data.get('column_name')
-    
-    if 'files' not in session or file_id not in session['files']:
-        return jsonify({'error': 'File not found. Please upload again.'}), 400
-    
-    try:
-        filepath = session['files'][file_id]
-        df = pd.read_excel(filepath, sheet_name=sheet_name)
-        
-        if column_name not in df.columns:
-            return jsonify({'error': 'Column not found.'}), 400
-        
-        # Get column data and clean it
-        col_data = df[column_name].dropna().astype(str).tolist()
-        col_data = [fix_encoding(v).strip() for v in col_data if str(v).strip()]
-        
-        # Get first 5 unique values as preview
-        preview_values = []
-        seen = set()
-        for value in col_data:
-            if value not in seen and len(preview_values) < 5:
-                preview_values.append(value)
-                seen.add(value)
-        
-        return jsonify({
-            'success': True,
-            'preview': preview_values,
-            'total_count': len(col_data),
-            'unique_count': len(set(col_data))
-        })
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/compare', methods=['POST'])
