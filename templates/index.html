@@ -4832,6 +4832,48 @@
             return { devices: data.devices, offlineDevices };
         }
 
+        async function refreshSource(fileId) {
+            const file = state[`file${fileId}`];
+            if (!file || !file.sourceType) {
+                showToast('No source selected to refresh', 'error');
+                return;
+            }
+            if (!file.sourceConfig || !file.sourceConfig.id) {
+                showToast('Missing source configuration for refresh', 'error');
+                return;
+            }
+
+            const refreshBtn = document.getElementById(`refresh-data-${fileId}`);
+            if (refreshBtn) {
+                refreshBtn.classList.add('loading');
+                refreshBtn.disabled = true;
+            }
+
+            try {
+                if (file.sourceType === 'SentinelOne') {
+                    await fetchSentinelOneEndpoints(fileId, file.sourceConfig.id, file.sourceConfig.name || 'SentinelOne');
+                } else if (file.sourceType === 'NinjaRMM') {
+                    await fetchNinjaDevices(fileId, file.sourceConfig.id, file.sourceConfig.name || 'NinjaRMM');
+                } else {
+                    showToast('Refresh not supported for this source', 'error');
+                }
+
+                const selectedCount = Object.values(state.selectedSources || {}).filter(Boolean).length;
+                if (selectedCount >= 2) {
+                    await runComparisonWithSelectedSources();
+                } else if (state.file1.uploaded && state.file2.uploaded) {
+                    await runComparison();
+                }
+            } catch (err) {
+                showToast(err.message || 'Refresh failed', 'error');
+            } finally {
+                if (refreshBtn) {
+                    refreshBtn.classList.remove('loading');
+                    refreshBtn.disabled = false;
+                }
+            }
+        }
+
         async function executeNinjaFetch(orgId, orgName, fileId) {
             if (!fileId) return;
             closeNinjaModal();
@@ -5792,6 +5834,11 @@
 
         const exportBtn = document.getElementById('export-btn');
         if (exportBtn) exportBtn.addEventListener('click', exportToHTML);
+
+        const refreshBtn1 = document.getElementById('refresh-data-1');
+        if (refreshBtn1) refreshBtn1.addEventListener('click', () => refreshSource('1'));
+        const refreshBtn2 = document.getElementById('refresh-data-2');
+        if (refreshBtn2) refreshBtn2.addEventListener('click', () => refreshSource('2'));
 
         const logoButton = document.getElementById('logo-button');
         if (logoButton) logoButton.addEventListener('click', returnToClientSelection);
