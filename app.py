@@ -810,11 +810,12 @@ def read_excel_file(filepath):
 @app.route('/')
 def index():
     """Render the main page."""
-    # Clear stale session data to prevent old file references
-    if 'files' in session:
-        logger.info(f'Clearing stale session files on page load: {list(session["files"].keys())}')
-        session.pop('files', None)
+    # Clear all session data to prevent stale file references
+    old_files = session.get('files', {})
+    if old_files:
+        logger.info(f'Clearing all session data on page load: {list(old_files.keys())}')
     
+    session.clear()
     session.setdefault('csrf_token', uuid.uuid4().hex)
     return render_template('index.html', csrf_token=session['csrf_token'])
 
