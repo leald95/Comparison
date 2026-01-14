@@ -974,8 +974,10 @@ def compare_columns():
         })
     
     except KeyError as e:
+        logger.error(f'Column not found error in compare: {str(e)}', exc_info=True)
         return jsonify({'error': f'Column not found: {str(e)}'}), 400
     except Exception as e:
+        logger.error(f'Comparison error: {str(e)}', exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
