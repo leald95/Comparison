@@ -242,7 +242,8 @@ app = Flask(__name__)
 # NOTE: In production, always set FLASK_SECRET_KEY in your .env file.
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY') or 'comparison-tool-stable-dev-key-8b92'
 
-# Session cookie hardening (recommended for LAN/prod)
+# Session configuration - make sessions permanent to persist across requests
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
 app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', '0') in ('1', 'true', 'True')
@@ -269,6 +270,9 @@ def _normalize_session_files_keys():
     auth_err = _require_basic_auth()
     if auth_err:
         return auth_err
+
+    # Make session permanent to persist across requests
+    session.permanent = True
 
     files = session.get('files')
     if isinstance(files, dict):
