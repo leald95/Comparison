@@ -15,7 +15,7 @@ import secrets
 import hmac
 import hashlib
 from urllib.parse import urlencode
-from flask import Flask, render_template, request, jsonify, session, Response, redirect, url_for, send_from_directory
+from flask import Flask, render_template, request, jsonify, session, Response, redirect, url_for, send_from_directory, make_response
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import pandas as pd
@@ -242,12 +242,12 @@ app = Flask(__name__)
 # NOTE: In production, always set FLASK_SECRET_KEY in your .env file.
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY') or 'comparison-tool-stable-dev-key-8b92'
 
-# Session configuration - make sessions permanent to persist across requests
-app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours
+# Session configuration - temporarily disable persistence to fix stale data
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour (shorter for testing)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = os.getenv('SESSION_COOKIE_SAMESITE', 'None')  # Changed from 'Lax' to 'None'
+app.config['SESSION_COOKIE_SAMESITE'] = os.getenv('SESSION_COOKIE_SAMESITE', 'None')
 app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', '0') in ('1', 'true', 'True')
-app.config['SESSION_COOKIE_DOMAIN'] = None  # Allow default domain
+app.config['SESSION_COOKIE_DOMAIN'] = None
 
 
 def _require_basic_auth():
@@ -810,15 +810,16 @@ def read_excel_file(filepath):
 @app.route('/')
 def index():
     """Render the main page."""
-    # Clear only files from session to prevent stale file references, keep CSRF token
+    # Force completely fresh session to prevent stale data issues
     old_files = session.get('files', {})
     if old_files:
-        logger.info(f'Clearing stale session files on page load: {list(old_files.keys())}')
-        session.pop('files', None)
-        session.modified = True
+        logger.info(f'Clearing session and forcing fresh start: {list(old_files.keys())}')
     
-    session.setdefault('csrf_token', uuid.uuid4().hex)
-    return render_template('index.html', csrf_token=session['csrf_token'])
+    # Clear session and delete the cookie to force fresh start
+    session.clear()
+    resp = make_response(render_template('index.html', csrf_token=uuid.uuid4().hex))
+    resp.delete_cookie('session')
+    return resp
 
 
 @app.route('/favicon.ico')
