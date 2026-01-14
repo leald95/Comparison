@@ -823,6 +823,7 @@ def compare_columns():
 
     logger.info(f'Compare request: file1_id={file1_id}, file2_id={file2_id}, file3_id={file3_id}')
     logger.info(f'Session files available: {list(session.get("files", {}).keys())}')
+    logger.info(f'Session file paths: {session.get("files", {})}')
 
     if 'files' not in session:
         logger.error('No files in session')
@@ -832,9 +833,17 @@ def compare_columns():
         logger.error(f'Missing files in session. Requested: {file1_id}, {file2_id}. Available: {list(session["files"].keys())}')
         return jsonify({'error': 'Both files must be uploaded.'}), 400
 
+    # Log the actual paths being used
+    file1_path = session['files'][file1_id]
+    file2_path = session['files'][file2_id]
+    logger.info(f'Reading file1 from: {file1_path}')
+    logger.info(f'Reading file2 from: {file2_path}')
+    logger.info(f'File1 exists: {os.path.exists(file1_path)}')
+    logger.info(f'File2 exists: {os.path.exists(file2_path)}')
+
     try:
         # Read files
-        df1 = pd.read_excel(session['files'][file1_id], sheet_name=file1_sheet)
+        df1 = pd.read_excel(file1_path, sheet_name=file1_sheet)
         df2 = pd.read_excel(session['files'][file2_id], sheet_name=file2_sheet)
         
         # Load AD data if provided
