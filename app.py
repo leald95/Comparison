@@ -245,8 +245,9 @@ app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY') or 'comparison-tool-sta
 # Session configuration - make sessions permanent to persist across requests
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config['SESSION_COOKIE_SAMESITE'] = os.getenv('SESSION_COOKIE_SAMESITE', 'None')  # Changed from 'Lax' to 'None'
 app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', '0') in ('1', 'true', 'True')
+app.config['SESSION_COOKIE_DOMAIN'] = None  # Allow default domain
 
 
 def _require_basic_auth():
@@ -275,8 +276,15 @@ def _normalize_session_files_keys():
     session.permanent = True
     
     # Log session info for debugging
-    session_id = request.cookies.get('session', 'NO_COOKIE')[:20] if request.cookies.get('session') else 'NO_COOKIE'
-    logger.info(f'Request {request.path} - Session ID: {session_id} - Files in session: {list(session.get("files", {}).keys())}')
+    session_cookie = request.cookies.get('session', 'NO_COOKIE')
+    session_id = session_cookie[:20] if session_cookie != 'NO_COOKIE' else 'NO_COOKIE'
+    all_cookies = list(request.cookies.keys())
+    logger.info(f'Request {request.path} - Session ID: {session_id} - Files: {list(session.get("files", {}).keys())} - All cookies: {all_cookies}')
+    
+    # Log session creation
+    if 'session_created' not in session:
+        logger.info(f'New session created for {request.path}')
+        session['session_created'] = True
 
     files = session.get('files')
     if isinstance(files, dict):
