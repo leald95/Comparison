@@ -3258,6 +3258,252 @@
             }
         }
 
+        function buildTestingExportRows(data) {
+            const rows = [];
+            const handledInPrefix = new Set();
+            const devices = new Map();
+
+            const offline1Map = new Map((state.file1.offlineDevices || []).map(d => [d.name, d.lastSeen]));
+            const offline2Map = new Map((state.file2.offlineDevices || []).map(d => [d.name, d.lastSeen]));
+            const offline1 = new Set(offline1Map.keys());
+            const offline2 = new Set(offline2Map.keys());
+
+            (data.prefix_matches || []).forEach(m => {
+                const key = `prefix_${m.file1}_${m.file2}`;
+                handledInPrefix.add(m.file1);
+                handledInPrefix.add(m.file2);
+                devices.set(key, {
+                    name: `S1: ${m.file1} | N: ${m.file2}`,
+                    file1: offline1.has(m.file1) ? 'offline' : 'found',
+                    file2: offline2.has(m.file2) ? 'offline' : 'found',
+                    file1LastSeen: offline1Map.get(m.file1) || '',
+                    file2LastSeen: offline2Map.get(m.file2) || '',
+                    inAd: m.in_ad === true ? 'yes' : m.in_ad === false ? 'no' : '',
+                    matchType: 'prefix',
+                    rawFile1: m.file1,
+                    rawFile2: m.file2
+                });
+            });
+
+            const setStatus = (name, fileId, status, inAd = null) => {
+                if (handledInPrefix.has(name)) return;
+                if (!devices.has(name)) {
+                    devices.set(name, {
+                        name: name,
+                        file1: 'missing',
+                        file2: 'missing',
+                        file1LastSeen: '',
+                        file2LastSeen: '',
+                        inAd: inAd === true ? 'yes' : inAd === false ? 'no' : '',
+                        matchType: '',
+                        rawFile1: fileId === 1 ? name : '',
+                        rawFile2: fileId === 2 ? name : ''
+                    });
+                }
+                const entry = devices.get(name);
+                if (fileId === 1) {
+                    entry.file1 = status;
+                    entry.rawFile1 = name;
+                    if (status === 'offline') entry.file1LastSeen = offline1Map.get(name) || '';
+                } else if (fileId === 2) {
+                    entry.file2 = status;
+                    entry.rawFile2 = name;
+                    if (status === 'offline') entry.file2LastSeen = offline2Map.get(name) || '';
+                }
+                if (inAd !== null) entry.inAd = inAd ? 'yes' : 'no';
+            };
+
+            (data.results_common || []).forEach(item => {
+                setStatus(item.name, 1, offline1.has(item.name) ? 'offline' : 'found', item.in_ad);
+                setStatus(item.name, 2, offline2.has(item.name) ? 'offline' : 'found', item.in_ad);
+            });
+
+            (data.results_file1 || []).forEach(item => {
+                setStatus(item.name, 1, offline1.has(item.name) ? 'offline' : 'found', item.in_ad);
+            });
+
+            (data.results_file2 || []).forEach(item => {
+                setStatus(item.name, 2, offline2.has(item.name) ? 'offline' : 'found', item.in_ad);
+            });
+
+            (data.results_ad || []).forEach(item => {
+                setStatus(item.name, 0, null, true);
+            });
+
+            Array.from(devices.values()).forEach(row => rows.push(row));
+            rows.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+            return rows;
+        }
+
+        function exportToHTML() {
+            const data = state.currentComparisonData;
+            if (!data) {
+                showToast('Run a comparison before exporting', 'error');
+                return;
+            }
+
+            const displayName1 = state.displayName1 || 'Source 1';
+            const displayName2 = state.displayName2 || 'Source 2';
+            const generatedAt = new Date().toISOString();
+
+            const onlyInFile1 = data.only_in_file1 || [];
+            const onlyInFile2 = data.only_in_file2 || [];
+            const inBoth = data.in_both || [];
+            const prefixMatches = data.prefix_matches || [];
+            const onlyInAd = data.only_in_ad || [];
+
+            const offline1 = state.file1.offlineDevices || [];
+            const offline2 = state.file2.offlineDevices || [];
+            const testingRows = buildTestingExportRows(data);
+
+            const exportHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Endpoint Comparison Export</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #0f172a; background: #f8fafc; margin: 0; padding: 24px; }
+    h1, h2 { margin: 0 0 12px 0; }
+    h2 { margin-top: 28px; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; }
+    .meta { font-size: 0.95rem; color: #475569; margin-bottom: 16px; }
+    .section { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-bottom: 18px; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .stat-card { background: #f1f5f9; border-radius: 8px; padding: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
+    th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; vertical-align: top; }
+    th { background: #f8fafc; }
+    ul { margin: 6px 0 0 18px; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #e2e8f0; font-size: 0.8rem; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <h1>Endpoint Comparison Export</h1>
+  <div class="meta">
+    Generated: ${escapeHtml(generatedAt)}<br>
+    Client: ${escapeHtml(state.clientName || 'Unknown')}<br>
+    Sources: ${escapeHtml(displayName1)} vs ${escapeHtml(displayName2)}<br>
+    Source 1 File: ${escapeHtml(state.file1.filename || '')}<br>
+    Source 2 File: ${escapeHtml(state.file2.filename || '')}<br>
+    Source 1 Column: ${escapeHtml(state.file1.sheet || '')} / ${escapeHtml(state.file1.column || '')}<br>
+    Source 2 Column: ${escapeHtml(state.file2.sheet || '')} / ${escapeHtml(state.file2.column || '')}<br>
+    AD Attached: ${data.ad_attached ? 'Yes' : 'No'}<br>
+    Offline Threshold: ${escapeHtml(String(state.offlineDaysThreshold || 0))} days
+  </div>
+
+  <div class="section">
+    <h2>Summary</h2>
+    <div class="stat-grid">
+      <div class="stat-card"><strong>${escapeHtml(displayName1)}</strong><br>Total: ${data.stats.unique_file1}<br>Only here: ${data.stats.only_in_file1_count}</div>
+      <div class="stat-card"><strong>${escapeHtml(displayName2)}</strong><br>Total: ${data.stats.unique_file2}<br>Only here: ${data.stats.only_in_file2_count}</div>
+      <div class="stat-card"><strong>Exact Matches</strong><br>${data.stats.common_count}<br>Match rate: ${data.stats.match_percentage}%</div>
+      <div class="stat-card"><strong>Prefix Matches</strong><br>${data.stats.prefix_match_count}</div>
+      ${data.ad_attached ? `<div class="stat-card"><strong>AD Only</strong><br>Total: ${data.stats.unique_ad}<br>Only here: ${data.stats.only_in_ad_count}</div>` : ''}
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Only in ${escapeHtml(displayName1)} (${onlyInFile1.length})</h2>
+    <ul>${onlyInFile1.map(v => `<li>${escapeHtml(v)}</li>`).join('')}</ul>
+  </div>
+
+  <div class="section">
+    <h2>Only in ${escapeHtml(displayName2)} (${onlyInFile2.length})</h2>
+    <ul>${onlyInFile2.map(v => `<li>${escapeHtml(v)}</li>`).join('')}</ul>
+  </div>
+
+  <div class="section">
+    <h2>Common Values (${inBoth.length})</h2>
+    <ul>${inBoth.map(v => `<li>${escapeHtml(v)}</li>`).join('')}</ul>
+  </div>
+
+  <div class="section">
+    <h2>Prefix Matches (${prefixMatches.length})</h2>
+    <ul>${prefixMatches.map(m => `<li>${escapeHtml(m.file1)} ↔ ${escapeHtml(m.file2)}</li>`).join('')}</ul>
+  </div>
+
+  ${data.ad_attached && onlyInAd ? `
+  <div class="section">
+    <h2>Only in Active Directory (${onlyInAd.length})</h2>
+    <ul>${onlyInAd.map(v => `<li>${escapeHtml(v)}</li>`).join('')}</ul>
+  </div>
+  ` : ''}
+
+  <div class="section">
+    <h2>Offline Devices</h2>
+    <p><span class="pill">${escapeHtml(displayName1)}</span> ${offline1.length} devices</p>
+    <ul>${offline1.map(d => `<li>${escapeHtml(d.name)} (${escapeHtml(d.lastSeen || '')})</li>`).join('')}</ul>
+    <p><span class="pill">${escapeHtml(displayName2)}</span> ${offline2.length} devices</p>
+    <ul>${offline2.map(d => `<li>${escapeHtml(d.name)} (${escapeHtml(d.lastSeen || '')})</li>`).join('')}</ul>
+  </div>
+
+  <div class="section">
+    <h2>Testing View</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Device</th>
+          <th>${escapeHtml(displayName1)} Status</th>
+          <th>${escapeHtml(displayName2)} Status</th>
+          ${data.ad_attached ? '<th>In AD</th>' : ''}
+          <th>Match Type</th>
+          <th>${escapeHtml(displayName1)} Last Seen</th>
+          <th>${escapeHtml(displayName2)} Last Seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${testingRows.map(row => `
+          <tr>
+            <td>${escapeHtml(row.name)}</td>
+            <td>${escapeHtml(row.file1)}</td>
+            <td>${escapeHtml(row.file2)}</td>
+            ${data.ad_attached ? `<td>${escapeHtml(row.inAd || '')}</td>` : ''}
+            <td>${escapeHtml(row.matchType || '')}</td>
+            <td>${escapeHtml(row.file1LastSeen || '')}</td>
+            <td>${escapeHtml(row.file2LastSeen || '')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Raw Comparison Data (JSON)</h2>
+    <pre>${escapeHtml(JSON.stringify({
+        generatedAt,
+        clientName: state.clientName,
+        displayName1,
+        displayName2,
+        file1: state.file1,
+        file2: state.file2,
+        ad: state.ad,
+        stats: data.stats,
+        results_common: data.results_common,
+        results_file1: data.results_file1,
+        results_file2: data.results_file2,
+        results_ad: data.results_ad,
+        only_in_file1: onlyInFile1,
+        only_in_file2: onlyInFile2,
+        in_both: inBoth,
+        prefix_matches: prefixMatches,
+        only_in_ad: onlyInAd
+    }, null, 2))}</pre>
+  </div>
+</body>
+</html>`;
+
+            const blob = new Blob([exportHtml], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `comparison_export_${generatedAt.replace(/[:.]/g, '-')}.html`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
         // Modal Management
         function openModal(modalId) {
             document.getElementById(modalId).classList.add('visible');
@@ -5460,6 +5706,9 @@
 
         // History button
         document.getElementById('history-btn').addEventListener('click', () => openModal('history-modal'));
+
+        const exportBtn = document.getElementById('export-btn');
+        if (exportBtn) exportBtn.addEventListener('click', exportToHTML);
 
         const logoButton = document.getElementById('logo-button');
         if (logoButton) logoButton.addEventListener('click', returnToClientSelection);
