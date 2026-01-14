@@ -91,6 +91,11 @@ A modern web application to compare endpoints between SentinelOne (EDR) and Ninj
      - `HISTORY_BACKEND=sqlite`
      - `COMPARISON_DB_PATH=comparison_history.db`
      - `HISTORY_RETENTION_DAYS=30`
+   
+   **Source data storage (optional):**
+   - Default: filesystem in `uploads/`
+   - To store API payloads in SQLite instead of files:
+     - `DATA_BACKEND=sqlite`
 
 3. **Configure Remediation (Optional)**:
    - Click the ⚙️ **Settings** button in the header

@@ -69,12 +69,25 @@ _CLIENT_UPLOAD_LOCKS = {}
 _UPLOAD_LOCK_TTL_SECONDS = int(os.getenv('UPLOAD_LOCK_TTL_SECONDS', '60'))
 _DEBUG_MODE = os.getenv('FLASK_DEBUG', '0') in ('1', 'true', 'True')
 _HISTORY_BACKEND = os.getenv('HISTORY_BACKEND', 'local').lower()
+_DATA_BACKEND = os.getenv('DATA_BACKEND', 'filesystem').lower()
 _HISTORY_RETENTION_DAYS = int(os.getenv('HISTORY_RETENTION_DAYS', '30'))
 _HISTORY_DB_PATH = os.path.abspath(os.getenv('COMPARISON_DB_PATH', 'comparison_history.db'))
 
 
 def _history_db_enabled():
     return _HISTORY_BACKEND in ('sqlite', 'db', 'database')
+
+
+def _data_db_enabled():
+    return _DATA_BACKEND in ('sqlite', 'db', 'database')
+
+
+def _is_db_ref(path):
+    return isinstance(path, str) and path.startswith('db://')
+
+
+def _db_file_ref(client_id, file_id):
+    return f'db://{client_id}/{file_id}'
 
 def _client_id_signer():
     global _CLIENT_ID_SIGNER
@@ -146,7 +159,7 @@ def _history_db_connection():
 
 
 def _init_history_db():
-    if not _history_db_enabled():
+    if not (_history_db_enabled() or _data_db_enabled()):
         return
     os.makedirs(os.path.dirname(_HISTORY_DB_PATH) or '.', exist_ok=True)
     with _history_db_connection() as conn:
@@ -172,6 +185,23 @@ def _init_history_db():
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_comparisons_client_time ON comparisons (client_id, created_at DESC)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS source_payloads (
+                id TEXT PRIMARY KEY,
+                client_id TEXT NOT NULL,
+                file_id TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                column_name TEXT,
+                values_json TEXT,
+                meta_json TEXT
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_source_payloads_lookup ON source_payloads (client_id, file_id, created_at DESC)"
         )
         conn.commit()
 
@@ -257,6 +287,105 @@ def _store_comparison_history(result, request_data, client_id):
         conn.commit()
     return comparison_id
 
+
+def _prune_source_payloads(conn):
+    if _HISTORY_RETENTION_DAYS <= 0:
+        return 0
+    cutoff = int(time.time()) - (_HISTORY_RETENTION_DAYS * 86400)
+    cur = conn.execute("DELETE FROM source_payloads WHERE created_at < ?", (cutoff,))
+    return cur.rowcount
+
+
+def _store_source_payload(client_id, file_id, source_type, values, column_name, meta=None):
+    if not _data_db_enabled():
+        return None
+    if not client_id:
+        return None
+    payload_id = str(uuid.uuid4())
+    created_at = int(time.time())
+    meta_json = json.dumps(meta or {})
+    values_json = json.dumps(values or [])
+
+    with _history_db_connection() as conn:
+        _prune_source_payloads(conn)
+        conn.execute(
+            "DELETE FROM source_payloads WHERE client_id = ? AND file_id = ?",
+            (str(client_id), str(file_id)),
+        )
+        conn.execute(
+            """
+            INSERT INTO source_payloads (
+                id, client_id, file_id, source_type, created_at, column_name, values_json, meta_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload_id,
+                str(client_id),
+                str(file_id),
+                source_type,
+                created_at,
+                column_name,
+                values_json,
+                meta_json,
+            ),
+        )
+        conn.commit()
+    return payload_id
+
+
+def _get_source_payload(client_id, file_id):
+    if not _data_db_enabled():
+        return None
+    if not client_id:
+        return None
+    with _history_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT source_type, column_name, values_json, meta_json
+            FROM source_payloads
+            WHERE client_id = ? AND file_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (str(client_id), str(file_id)),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        values = json.loads(row['values_json']) if row['values_json'] else []
+    except Exception:
+        values = []
+    try:
+        meta = json.loads(row['meta_json']) if row['meta_json'] else {}
+    except Exception:
+        meta = {}
+    return {
+        'source_type': row['source_type'],
+        'column_name': row['column_name'] or _SOURCE_COLUMN_NAME,
+        'values': values,
+        'meta': meta,
+    }
+
+
+def _load_source_values_from_file(file_path, sheet_name, column_name):
+    df = pd.read_excel(file_path, sheet_name=sheet_name)
+    if column_name not in df.columns:
+        raise KeyError(column_name)
+    return df[column_name].dropna().astype(str).tolist()
+
+
+def _load_source_values(client_id, file_id, file_ref, sheet_name, column_name, payload=None):
+    if payload is None and _data_db_enabled():
+        payload = _get_source_payload(client_id, file_id)
+    if payload:
+        payload_column = payload.get('column_name') or _SOURCE_COLUMN_NAME
+        if column_name and payload_column != column_name:
+            raise KeyError(column_name)
+        return payload.get('values') or []
+    if not file_ref or not os.path.exists(file_ref):
+        raise FileNotFoundError(file_ref or '')
+    return _load_source_values_from_file(file_ref, sheet_name, column_name)
+
 def _prune_upload_locks(now=None):
     now = now or time.time()
     stale_keys = [k for k, ts in _CLIENT_UPLOAD_LOCKS.items() if now - ts >= _UPLOAD_LOCK_TTL_SECONDS]
@@ -297,7 +426,7 @@ def _collect_referenced_paths():
         store_files = store.get('files', {})
         if isinstance(store_files, dict):
             referenced.update(store_files.values())
-    return {os.path.abspath(p) for p in referenced if p}
+    return {os.path.abspath(p) for p in referenced if p and not _is_db_ref(p)}
 
 def _remove_client_file_ref(client_id, file_id):
     if client_id and client_id in _CLIENT_FILE_STORE:
@@ -308,6 +437,8 @@ def _prune_missing_file_refs(files, client_id=None, update_session=False, update
         return {}, []
     removed = []
     for fid, path in list(files.items()):
+        if _is_db_ref(path):
+            continue
         if not path or not os.path.exists(path):
             removed.append((fid, path))
             files.pop(fid, None)
@@ -392,6 +523,7 @@ _AD_CUSTOM_FIELD_NAME = 'ADInventoryJson'
 _AD_INTAKE_NONCES = {}
 _AD_INTAKE_NONCE_TTL_SECONDS = 15 * 60
 _SOURCE_COLUMN_NAME = 'Name'
+_AD_COLUMN_NAME = 'Computer Name'
 
 
 def _get_ninja_api_url():
@@ -1282,55 +1414,71 @@ def compare_columns():
     if missing_fields:
         return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
 
-    if not files:
-        logger.error(f'No files found for client {client_id} (Session: {list(session.get("files", {}).keys())})')
-        return jsonify({'error': 'Files not found. Please upload again.'}), 400
+    file1_ref = files.get(file1_id)
+    file2_ref = files.get(file2_id)
+    file1_payload = _get_source_payload(client_id, file1_id) if _data_db_enabled() else None
+    file2_payload = _get_source_payload(client_id, file2_id) if _data_db_enabled() else None
 
-    if file1_id not in files or file2_id not in files:
-        logger.error(f'Missing files. Requested: {file1_id}, {file2_id}. Available: {list(files.keys())}')
+    if not file1_ref and not file1_payload:
+        logger.error(f'Missing file1. Requested: {file1_id}. Available: {list(files.keys())}')
+        return jsonify({'error': 'Both files must be uploaded.'}), 400
+    if not file2_ref and not file2_payload:
+        logger.error(f'Missing file2. Requested: {file2_id}. Available: {list(files.keys())}')
         return jsonify({'error': 'Both files must be uploaded.'}), 400
 
-    # Log the actual paths being used
-    file1_path = files[file1_id]
-    file2_path = files[file2_id]
-    logger.info(f'Reading file1 from: {file1_path}')
-    logger.info(f'Reading file2 from: {file2_path}')
-    logger.info(f'File1 exists: {os.path.exists(file1_path)}')
-    logger.info(f'File2 exists: {os.path.exists(file2_path)}')
+    if file1_ref and _is_db_ref(file1_ref) and not file1_payload:
+        _remove_client_file_ref(client_id, file1_id)
+        return jsonify({'error': 'Stored data for file 1 is missing. Please upload again.'}), 400
+    if file2_ref and _is_db_ref(file2_ref) and not file2_payload:
+        _remove_client_file_ref(client_id, file2_id)
+        return jsonify({'error': 'Stored data for file 2 is missing. Please upload again.'}), 400
 
-    if not os.path.exists(file1_path) or not os.path.exists(file2_path):
-        if not os.path.exists(file1_path):
+    if file1_ref and not _is_db_ref(file1_ref) and not os.path.exists(file1_ref):
+        if not file1_payload:
             _remove_client_file_ref(client_id, file1_id)
-        if not os.path.exists(file2_path):
+            return jsonify({'error': 'One or more uploaded files are missing. Please upload again.'}), 400
+    if file2_ref and not _is_db_ref(file2_ref) and not os.path.exists(file2_ref):
+        if not file2_payload:
             _remove_client_file_ref(client_id, file2_id)
-        return jsonify({'error': 'One or more uploaded files are missing. Please upload again.'}), 400
+            return jsonify({'error': 'One or more uploaded files are missing. Please upload again.'}), 400
 
     try:
-        # Read files
-        df1 = pd.read_excel(file1_path, sheet_name=file1_sheet)
-        df2 = pd.read_excel(file2_path, sheet_name=file2_sheet)
-
-        if file1_column not in df1.columns:
-            return jsonify({'error': f'Column \"{file1_column}\" not found in file 1'}), 400
-        if file2_column not in df2.columns:
-            return jsonify({'error': f'Column \"{file2_column}\" not found in file 2'}), 400
+        # Read source data (file or stored payload)
+        col1_data = _load_source_values(
+            client_id,
+            file1_id,
+            file1_ref,
+            file1_sheet,
+            file1_column,
+            payload=file1_payload,
+        )
+        col2_data = _load_source_values(
+            client_id,
+            file2_id,
+            file2_ref,
+            file2_sheet,
+            file2_column,
+            payload=file2_payload,
+        )
         
         # Load AD data if provided
         set3_norm = set()
-        if file3_id and file3_id in files:
+        if file3_id:
             try:
-                df3 = pd.read_excel(files[file3_id]) # AD files are always flat-ish
-                # AD schema uses 'Name' column from _save_ad_inventory_to_excel
-                col3_name = 'Name' if 'Name' in df3.columns else df3.columns[0]
-                col3_data = df3[col3_name].dropna().astype(str).tolist()
+                ad_payload = _get_source_payload(client_id, file3_id) if _data_db_enabled() else None
+                if ad_payload:
+                    col3_data = ad_payload.get('values') or []
+                elif file3_id in files:
+                    df3 = pd.read_excel(files[file3_id])  # AD files are always flat-ish
+                    # AD schema uses 'Name' column from _save_ad_inventory_to_excel
+                    col3_name = 'Name' if 'Name' in df3.columns else df3.columns[0]
+                    col3_data = df3[col3_name].dropna().astype(str).tolist()
+                else:
+                    col3_data = []
                 set3_norm = {normalize_value(v) for v in col3_data if normalize_value(v)}
                 logger.info('Loaded AD data for comparison: %d items', len(set3_norm))
             except Exception as e:
                 logger.warning('Failed to load AD data for comparison: %s', str(e))
-        
-        # Get the columns and filter out empty values
-        col1_data = df1[file1_column].dropna().astype(str).tolist()
-        col2_data = df2[file2_column].dropna().astype(str).tolist()
         
         # Fix encoding and filter out empty strings
         col1_data = [fix_encoding(v).strip() for v in col1_data if str(v).strip()]
@@ -1457,6 +1605,9 @@ def compare_columns():
 
         return jsonify(result)
     
+    except FileNotFoundError as e:
+        logger.error('Compare read error: %s', str(e), exc_info=True)
+        return jsonify({'error': 'One or more uploaded files are missing. Please upload again.'}), 400
     except ValueError as e:
         logger.error('Compare read error: %s', str(e), exc_info=True)
         return jsonify({'error': str(e)}), 400
@@ -1785,6 +1936,8 @@ def upload_sentinelone_data():
 
     if not endpoints:
         return jsonify({'error': 'No endpoints provided'}), 400
+    if _data_db_enabled() and not client_id:
+        return jsonify({'error': 'client_id is required for database storage'}), 400
 
     lock_key = _acquire_upload_lock(client_id, file_id)
     if client_id and not lock_key:
@@ -1794,29 +1947,41 @@ def upload_sentinelone_data():
         # Extract names from device objects (keep all devices, no filtering)
         endpoint_names = [ep['name'] if isinstance(ep, dict) else ep for ep in endpoints]
 
-        # Create a DataFrame from endpoints
-        df = pd.DataFrame({_SOURCE_COLUMN_NAME: endpoint_names})
+        if _data_db_enabled():
+            _store_source_payload(
+                client_id,
+                file_id,
+                'sentinelone',
+                endpoint_names,
+                _SOURCE_COLUMN_NAME,
+            )
+            filepath = _db_file_ref(client_id, file_id)
+            filename = 'SentinelOne Endpoints'
+            logger.info('Stored SentinelOne payload in DB (%d endpoints) client_id=%s', len(endpoint_names), client_id or 'NO_CLIENT')
+        else:
+            # Create a DataFrame from endpoints
+            df = pd.DataFrame({_SOURCE_COLUMN_NAME: endpoint_names})
 
-        # Generate unique filename
-        unique_id = str(uuid.uuid4())
-        filename = f'sentinelone_endpoints_{unique_id}.xlsx'
-        filepath = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            # Generate unique filename
+            unique_id = str(uuid.uuid4())
+            filename = f'sentinelone_endpoints_{unique_id}.xlsx'
+            filepath = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
-        # Save to Excel
-        df.to_excel(filepath, index=False, engine='openpyxl')
+            # Save to Excel
+            df.to_excel(filepath, index=False, engine='openpyxl')
 
-        # Verify file was created
-        if not os.path.exists(filepath):
-            logger.error('File creation failed: %s', filepath)
-            return jsonify({'error': 'File creation failed'}), 500
+            # Verify file was created
+            if not os.path.exists(filepath):
+                logger.error('File creation failed: %s', filepath)
+                return jsonify({'error': 'File creation failed'}), 500
 
-        logger.info('Created SentinelOne file: %s (%d endpoints) client_id=%s', filename, len(endpoint_names), client_id or 'NO_CLIENT')
+            logger.info('Created SentinelOne file: %s (%d endpoints) client_id=%s', filename, len(endpoint_names), client_id or 'NO_CLIENT')
 
         # Delete old file if it exists in session
         if 'files' in session and file_id in session['files']:
             old_filepath = session['files'][file_id]
             try:
-                if os.path.exists(old_filepath):
+                if old_filepath and not _is_db_ref(old_filepath) and os.path.exists(old_filepath):
                     os.remove(old_filepath)
                     logger.info('Removed old file: %s', old_filepath)
             except Exception as e:
@@ -2133,6 +2298,8 @@ def upload_ninjarmm_data():
     
     if not devices:
         return jsonify({'error': 'No devices provided'}), 400
+    if _data_db_enabled() and not client_id:
+        return jsonify({'error': 'client_id is required for database storage'}), 400
     
     lock_key = _acquire_upload_lock(client_id, file_id)
     if client_id and not lock_key:
@@ -2142,29 +2309,41 @@ def upload_ninjarmm_data():
         # Extract names from device objects (keep all devices, no filtering)
         device_names = [dev['name'] if isinstance(dev, dict) else dev for dev in devices]
 
-        # Create a DataFrame from devices
-        df = pd.DataFrame({_SOURCE_COLUMN_NAME: device_names})
+        if _data_db_enabled():
+            _store_source_payload(
+                client_id,
+                file_id,
+                'ninjarmm',
+                device_names,
+                _SOURCE_COLUMN_NAME,
+            )
+            filepath = _db_file_ref(client_id, file_id)
+            filename = 'NinjaRMM Devices'
+            logger.info('Stored NinjaRMM payload in DB (%d devices) client_id=%s', len(device_names), client_id or 'NO_CLIENT')
+        else:
+            # Create a DataFrame from devices
+            df = pd.DataFrame({_SOURCE_COLUMN_NAME: device_names})
 
-        # Generate unique filename
-        unique_id = str(uuid.uuid4())
-        filename = f'ninjarmm_devices_{unique_id}.xlsx'
-        filepath = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            # Generate unique filename
+            unique_id = str(uuid.uuid4())
+            filename = f'ninjarmm_devices_{unique_id}.xlsx'
+            filepath = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
-        # Save to Excel
-        df.to_excel(filepath, index=False, engine='openpyxl')
+            # Save to Excel
+            df.to_excel(filepath, index=False, engine='openpyxl')
 
-        # Verify file was created
-        if not os.path.exists(filepath):
-            logger.error('File creation failed: %s', filepath)
-            return jsonify({'error': 'File creation failed'}), 500
+            # Verify file was created
+            if not os.path.exists(filepath):
+                logger.error('File creation failed: %s', filepath)
+                return jsonify({'error': 'File creation failed'}), 500
 
-        logger.info('Created NinjaRMM file: %s (%d devices) client_id=%s', filename, len(device_names), client_id or 'NO_CLIENT')
+            logger.info('Created NinjaRMM file: %s (%d devices) client_id=%s', filename, len(device_names), client_id or 'NO_CLIENT')
 
         # Delete old file if it exists in session
         if 'files' in session and file_id in session['files']:
             old_filepath = session['files'][file_id]
             try:
-                if os.path.exists(old_filepath):
+                if old_filepath and not _is_db_ref(old_filepath) and os.path.exists(old_filepath):
                     os.remove(old_filepath)
                     logger.info('Removed old file: %s', old_filepath)
             except Exception as e:
@@ -2521,7 +2700,7 @@ def run_ninjarmm_script():
         return jsonify({'error': str(e)}), 500
 
 
-def _save_ad_inventory_to_excel(parsed_data, client, days, clean_client, org_id=None, device_id=None):
+def _save_ad_inventory_to_excel(parsed_data, client, days, clean_client, org_id=None, device_id=None, client_id=None):
     """Process AD inventory JSON data and save to Excel cache."""
     items = parsed_data.get('workstations') or parsed_data.get('computers') or []
     if not isinstance(items, list):
@@ -2537,22 +2716,36 @@ def _save_ad_inventory_to_excel(parsed_data, client, days, clean_client, org_id=
             names.append(fix_encoding(name).strip())
     names = [n for n in names if n]
 
-    uploads_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
-    filename = f'ad_computers_{uuid.uuid4().hex}.xlsx'
-    filepath = os.path.join(uploads_root, filename)
-
-    df = pd.DataFrame({'Computer Name': names})
-    df.to_excel(filepath, index=False, engine='openpyxl')
-
     entry = {
-        'path': filepath,
         'count': len(names),
         'received_at': int(time.time()),
         'client': clean_client or client,
         'days': days,
         'org_id': org_id,
         'device_id': device_id,
+        'column_name': _AD_COLUMN_NAME,
+        'names': names,
     }
+
+    if not _data_db_enabled():
+        uploads_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
+        filename = f'ad_computers_{uuid.uuid4().hex}.xlsx'
+        filepath = os.path.join(uploads_root, filename)
+
+        df = pd.DataFrame({_AD_COLUMN_NAME: names})
+        df.to_excel(filepath, index=False, engine='openpyxl')
+        entry['path'] = filepath
+    else:
+        entry['path'] = None
+        if client_id:
+            _store_source_payload(
+                client_id,
+                '3',
+                'active_directory',
+                names,
+                _AD_COLUMN_NAME,
+                meta={'days': days, 'org_id': org_id, 'device_id': device_id},
+            )
     _store_ad_cache_entry(entry, client, clean_client, days, org_id=org_id, device_id=device_id)
 
     return entry
@@ -2562,13 +2755,25 @@ def _build_ad_attach_payload(entry, file_id='3'):
         'file_id': str(file_id),
         'filename': 'Active Directory',
         'sheets': ['Sheet1'],
-        'columns': ['Computer Name'],
+        'columns': [entry.get('column_name') or _AD_COLUMN_NAME],
         'count': entry.get('count', 0),
         'row_count': entry.get('count', 0),
     }
 
 def _attach_ad_entry(entry, file_id, client_id):
-    _set_session_file(file_id, entry['path'], client_id)
+    if _data_db_enabled():
+        if client_id:
+            _store_source_payload(
+                client_id,
+                file_id,
+                'active_directory',
+                entry.get('names') or [],
+                entry.get('column_name') or _AD_COLUMN_NAME,
+                meta={'days': entry.get('days'), 'org_id': entry.get('org_id'), 'device_id': entry.get('device_id')},
+            )
+            _set_session_file(file_id, _db_file_ref(client_id, file_id), client_id)
+    else:
+        _set_session_file(file_id, entry['path'], client_id)
     payload = _build_ad_attach_payload(entry, file_id=file_id)
     payload['attached'] = True
     return payload
@@ -2682,6 +2887,7 @@ def trigger_ad_inventory():
                                     clean_client,
                                     org_id=org_id,
                                     device_id=device_id,
+                                    client_id=client_id,
                                 )
                                 if entry is not None:
                                     payload = {
@@ -2886,6 +3092,7 @@ def trigger_ad_inventory():
                         clean_client,
                         org_id=org_id,
                         device_id=device_id,
+                        client_id=client_id,
                     )
                     if entry is not None:
                         validation_method = 'runId' if runid_match else 'timestamp+days'
@@ -3056,6 +3263,7 @@ def ad_intake():
         clean_client,
         org_id=org_id,
         device_id=device_id,
+        client_id=payload.get('client_id'),
     )
 
     logger.info(
@@ -3133,6 +3341,7 @@ def sync_ad_inventory():
                 clean_client,
                 org_id=org_id,
                 device_id=device_id,
+                client_id=client_id,
             )
             if entry is not None:
                 gen_str = latest_parsed.get('generatedAtUtc', 'unknown time')
@@ -3418,6 +3627,13 @@ def cleanup():
                     logger.info('Pruned client %s from global store (age: %dh)', cid, int(age / 3600))
     except Exception as e:
         logger.warning('Global store pruning failed: %s', e)
+
+    if _data_db_enabled():
+        try:
+            with _history_db_connection() as conn:
+                _prune_source_payloads(conn)
+        except Exception as e:
+            logger.warning('Source payload pruning failed: %s', e)
 
     return jsonify({
         'success': True,
