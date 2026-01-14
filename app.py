@@ -66,6 +66,7 @@ _CLIENT_ID_SIGNER = None
 
 _CLIENT_UPLOAD_LOCKS = {}
 _UPLOAD_LOCK_TTL_SECONDS = int(os.getenv('UPLOAD_LOCK_TTL_SECONDS', '60'))
+_DEBUG_MODE = os.getenv('FLASK_DEBUG', '0') in ('1', 'true', 'True')
 
 def _client_id_signer():
     global _CLIENT_ID_SIGNER
@@ -83,18 +84,23 @@ def _get_client_id_from_cookie():
         return None
 
 def _resolve_client_id(data=None):
-    """Resolve client_id from request JSON, session, or signed cookie."""
+    """Resolve client_id from session or signed cookie; only accept payload when no stored id exists."""
     payload = {}
     if isinstance(data, dict):
         payload = data
     elif request.is_json:
         payload = request.get_json(silent=True) or {}
 
-    client_id = payload.get('client_id') if isinstance(payload, dict) else None
-    if not client_id:
-        client_id = session.get('client_id')
-    if not client_id:
-        client_id = _get_client_id_from_cookie()
+    payload_client = payload.get('client_id') if isinstance(payload, dict) else None
+    session_client = session.get('client_id') or _get_client_id_from_cookie()
+
+    if session_client:
+        if payload_client and str(payload_client) != str(session_client):
+            logger.warning('Ignoring client_id from payload (client mismatch)')
+        client_id = session_client
+    else:
+        client_id = payload_client
+
     if client_id:
         client_id = str(client_id)
         session['client_id'] = client_id
@@ -471,20 +477,34 @@ app = Flask(__name__)
 
 # Use a stable secret key if provided; falls back to a stable default for local dev stability.
 # NOTE: In production, always set FLASK_SECRET_KEY in your .env file.
-app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY') or 'comparison-tool-stable-dev-key-8b92'
+secret_key = os.getenv('FLASK_SECRET_KEY')
+if not secret_key and not _DEBUG_MODE:
+    raise RuntimeError('FLASK_SECRET_KEY must be set when FLASK_DEBUG is disabled.')
+app.config['SECRET_KEY'] = secret_key or 'comparison-tool-stable-dev-key-8b92'
 
 # Session configuration - optimized for local HTTP development
 app.config['PERMANENT_SESSION_LIFETIME'] = 7200  # 2 hours
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_SECURE'] = False
+app.config['SESSION_COOKIE_SECURE'] = os.getenv(
+    'SESSION_COOKIE_SECURE',
+    '0' if _DEBUG_MODE else '1',
+).lower() in ('1', 'true', 'yes')
 app.config['SESSION_REFRESH_EACH_REQUEST'] = True
 app.config['SESSION_COOKIE_DOMAIN'] = None
 app.config['SERVER_SESSION_VERSION'] = uuid.uuid4().hex
 
 
+def _is_local_request():
+    addr = request.headers.get('X-Forwarded-For', request.remote_addr or '')
+    addr = addr.split(',')[0].strip()
+    return addr in ('127.0.0.1', '::1')
+
+
 def _require_basic_auth():
     if os.getenv('ENABLE_BASIC_AUTH', '0') not in ('1', 'true', 'True'):
+        if not _is_local_request() and os.getenv('ALLOW_UNAUTHENTICATED_REMOTE', '0') not in ('1', 'true', 'True'):
+            return Response('Authentication required', 401, {'WWW-Authenticate': 'Basic realm="Comparison"'})
         return None
 
     username = os.getenv('BASIC_AUTH_USERNAME')
@@ -505,18 +525,19 @@ def _normalize_session_files_keys():
     if auth_err:
         return auth_err
 
+    g.csp_nonce = base64.b64encode(os.urandom(16)).decode('ascii')
+
     # Make session permanent to persist across requests
     session.permanent = True
     
     # Log session info for debugging
-    session_cookie = request.cookies.get('session', 'NO_COOKIE')
-    session_id = session_cookie[:20] if session_cookie != 'NO_COOKIE' else 'NO_COOKIE'
+    session_cookie_present = 'session' in request.cookies
     all_cookies = list(request.cookies.keys())
     client_id = _resolve_client_id()
     logger.info(
-        'Request %s - Session ID: %s - Client: %s - Files: %s - All cookies: %s',
+        'Request %s - Session cookie: %s - Client: %s - Files: %s - All cookies: %s',
         request.path,
-        session_id,
+        'PRESENT' if session_cookie_present else 'MISSING',
         client_id or 'NO_CLIENT',
         list(session.get('files', {}).keys()),
         all_cookies,
@@ -537,14 +558,18 @@ def _normalize_session_files_keys():
 
 @app.after_request
 def _set_security_headers(resp):
+    csp_nonce = getattr(g, 'csp_nonce', '')
+    script_src = "script-src 'self'"
+    if csp_nonce:
+        script_src = f"script-src 'self' 'nonce-{csp_nonce}'"
+
     resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
     resp.headers.setdefault('X-Frame-Options', 'DENY')
     resp.headers.setdefault('Referrer-Policy', 'no-referrer')
     resp.headers.setdefault('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
-    # SPA uses inline <style>/<script>, so CSP must allow 'unsafe-inline' unless refactored to nonces.
     resp.headers.setdefault(
         'Content-Security-Policy',
-        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'"
+        f"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; {script_src}; connect-src 'self'"
     )
     client_id = getattr(g, 'client_id', None) or session.get('client_id')
     if client_id:
@@ -1083,6 +1108,7 @@ def index():
         'index.html',
         csrf_token=csrf_token,
         session_version=app.config['SERVER_SESSION_VERSION'],
+        csp_nonce=getattr(g, 'csp_nonce', ''),
     )
 
 
@@ -1821,8 +1847,8 @@ def upload_ninjarmm_data():
         return csrf_err
 
     # Log session cookie details for debugging
-    session_cookie = request.cookies.get('session', 'NO_COOKIE')
-    logger.info(f'Ninja upload - Session cookie: {session_cookie[:20] if session_cookie != "NO_COOKIE" else "NO_COOKIE"}')
+    session_cookie_present = 'session' in request.cookies
+    logger.info('Ninja upload - Session cookie present: %s', session_cookie_present)
     logger.info(f'Ninja upload - Session files before: {list(session.get("files", {}).keys())}')
 
     data = request.json
@@ -2857,6 +2883,8 @@ def sync_ad_inventory():
 @app.route('/ad/debug/inspect-field', methods=['POST'])
 def inspect_ninja_field():
     """Debug endpoint to pull raw custom field data for a specific ID and type."""
+    if os.getenv('ENABLE_DEBUG_ENDPOINTS', '0') not in ('1', 'true', 'True'):
+        return jsonify({'error': 'Debug endpoints are disabled.'}), 403
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err
@@ -2908,6 +2936,8 @@ def inspect_ninja_field():
 @app.route('/ad/debug/list-fields', methods=['POST'])
 def list_ninja_fields():
     """Debug endpoint to list all available custom fields for a specific ID and type."""
+    if os.getenv('ENABLE_DEBUG_ENDPOINTS', '0') not in ('1', 'true', 'True'):
+        return jsonify({'error': 'Debug endpoints are disabled.'}), 403
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err

@@ -134,7 +134,7 @@ $json = $payload | ConvertTo-Json -Depth 6
 $maxLen = 9500
 $valueToStore = $json
 if ($valueToStore.Length -gt $maxLen) {
-  $valueToStore = ($valueToStore.Substring(0, $maxLen) + "\n...TRUNCATED...")
+  Fail "Payload too large for custom field ($($valueToStore.Length) chars). Reduce scope or increase field size."
 }
 
 Ninja-Property-Set -Name $CustomFieldName -Value $valueToStore -ErrorAction Stop | Out-Null

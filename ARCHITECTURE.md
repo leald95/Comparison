@@ -47,7 +47,7 @@ A Flask-based web application designed for MSP (Managed Service Provider) teams 
 │  │  - /sentinelone/*        (S1 API proxy)               │  │
 │  │  - /ninjarmm/*           (Ninja API proxy)            │  │
 │  │  - /compare              (Column comparison logic)    │  │
-│  │  - /upload               (Virtual file creation)      │  │
+│  │  - /sentinelone/upload   (Virtual file creation)      │  │
 │  │  - /ad/*                 (AD inventory via Ninja)     │  │
 │  │  - /cleanup              (Session file cleanup)       │  │
 │  └───────────────────────────────────────────────────────┘  │
@@ -417,7 +417,6 @@ app.py (1,532 lines)
 │   ├── GET  /                 # Serve index.html
 │   └── POST /cleanup          # Delete session files
 ├── Routes - File Upload (Legacy, unused in UI)
-│   ├── POST /upload           # Upload Excel file
 │   ├── POST /get_columns      # Get sheet columns
 │   └── POST /preview_column   # Preview column data
 ├── Routes - Comparison

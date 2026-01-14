@@ -650,6 +650,11 @@
             cursor: not-allowed;
         }
 
+        .client-search-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+        }
+
         /* Compare Button */
         .compare-section {
             text-align: center;
@@ -2185,7 +2190,7 @@
 
     <div class="container">
         <header>
-            <div class="logo" style="cursor: pointer;" onclick="returnToClientSelection()"
+            <div class="logo" id="logo-button" style="cursor: pointer;"
                 title="Return to Client Selection">
                 <div class="logo-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="32" height="32">
@@ -2372,7 +2377,7 @@
 
             <!-- Offline Devices Section -->
             <div class="offline-section collapsed" id="offline-section" style="display: none;">
-                <div class="offline-header" onclick="toggleOfflineSection()">
+                <div class="offline-header" id="offline-header">
                     <span class="offline-icon">⚠️</span>
                     <span class="offline-title" id="offline-section-title">Devices Offline > 30 Days</span>
                     <span class="offline-toggle" id="offline-toggle">▼</span>
@@ -2579,10 +2584,8 @@
                 <button type="button" class="modal-close" id="unified-client-modal-close">✕</button>
             </div>
             <div style="padding: 0 2rem 1rem 2rem;">
-                <input type="text" id="client-search-input" placeholder="🔍 Search clients..."
-                    style="width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-deep); color: var(--text-primary); font-size: 0.95rem; font-family: 'Outfit', sans-serif; outline: none; transition: all 0.2s ease;"
-                    onfocus="this.style.borderColor='var(--primary)'; this.style.boxShadow='0 0 0 3px rgba(139, 92, 246, 0.1)'"
-                    onblur="this.style.borderColor='var(--border-subtle)'; this.style.boxShadow='none'">
+                <input type="text" id="client-search-input" class="client-search-input" placeholder="🔍 Search clients..."
+                    style="width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-deep); color: var(--text-primary); font-size: 0.95rem; font-family: 'Outfit', sans-serif; outline: none; transition: all 0.2s ease;">
             </div>
             <div id="unified-client-modal-content">
                 <div class="modal-loading">
@@ -2714,7 +2717,7 @@
             </div>
             <div class="modal-content" style="padding: 2rem;">
                 <div class="settings-section">
-                    <div class="settings-section-title" onclick="toggleDebugSection('scripts')"
+                    <div class="settings-section-title debug-toggle" data-section="scripts"
                         style="cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center;">
                         <span>📜 Ninja Scripts (IDs)</span>
                         <span id="debug-scripts-toggle" style="transition: transform 0.2s;">▼</span>
@@ -2727,7 +2730,7 @@
                 </div>
 
                 <div class="settings-section">
-                    <div class="settings-section-title" onclick="toggleDebugSection('devices')"
+                    <div class="settings-section-title debug-toggle" data-section="devices"
                         style="cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center;">
                         <span>💻 Ninja Devices (IDs)</span>
                         <span id="debug-devices-toggle" style="transition: transform 0.2s;">▼</span>
@@ -2779,7 +2782,7 @@
         </div>
     </div>
 
-    <script>
+    <script nonce="{{ csp_nonce }}">
         // CSRF: automatically attach token to all same-origin POST requests
         const csrfTokenMeta = document.querySelector('meta[name="csrf-token"]');
         const csrfToken = csrfTokenMeta ? csrfTokenMeta.getAttribute('content') : null;
@@ -3472,10 +3475,10 @@
                             <div class="history-stat">✅ ${item.data.stats.common_count} exact</div>
                         </div>
                         <div class="history-item-actions">
-                            <button class="history-action-btn history-load-btn" onclick="loadHistoryItem('${item.id}')">
+                            <button class="history-action-btn history-load-btn" data-history-action="load" data-history-id="${item.id}">
                                 Load Results
                             </button>
-                            <button class="history-action-btn history-delete-btn" onclick="deleteHistoryItem('${item.id}', event)">
+                            <button class="history-action-btn history-delete-btn" data-history-action="delete" data-history-id="${item.id}">
                                 🗑️
                             </button>
                         </div>
@@ -5221,8 +5224,8 @@
                 const isDeviceOnline = lastContact > fiveMinutesAgo;
 
                 const remediationCell = needsRemediation ?
-                    `<button class="remediation-btn" 
-                            onclick="runRemediation('${escapeHtml(deviceName)}')" 
+                    `<button class="remediation-btn"
+                            data-device-name="${escapeHtml(deviceName)}"
                             ${!isDeviceOnline || !state.remediationScriptId ? 'disabled' : ''}
                             title="${!state.remediationScriptId ? 'Configure script in Settings' : !isDeviceOnline ? 'Device not online in NinjaRMM (last contact > 5 min)' : 'Install SentinelOne'}">
                         🛠️ Fix S1
@@ -5457,6 +5460,39 @@
 
         // History button
         document.getElementById('history-btn').addEventListener('click', () => openModal('history-modal'));
+
+        const logoButton = document.getElementById('logo-button');
+        if (logoButton) logoButton.addEventListener('click', returnToClientSelection);
+
+        const offlineHeader = document.getElementById('offline-header');
+        if (offlineHeader) offlineHeader.addEventListener('click', toggleOfflineSection);
+
+        document.querySelectorAll('.debug-toggle').forEach((el) => {
+            el.addEventListener('click', () => toggleDebugSection(el.dataset.section));
+        });
+
+        const historyList = document.getElementById('history-list');
+        if (historyList) {
+            historyList.addEventListener('click', (event) => {
+                const button = event.target.closest('button[data-history-action]');
+                if (!button) return;
+                const action = button.dataset.historyAction;
+                const historyId = button.dataset.historyId;
+                if (!historyId) return;
+                if (action === 'load') {
+                    loadHistoryItem(historyId);
+                } else if (action === 'delete') {
+                    deleteHistoryItem(historyId, event);
+                }
+            });
+        }
+
+        document.addEventListener('click', (event) => {
+            const button = event.target.closest('.remediation-btn');
+            if (!button) return;
+            const deviceName = button.dataset.deviceName;
+            if (deviceName) runRemediation(deviceName);
+        });
 
         function renderDebugIds() {
             const scriptsEl = document.getElementById('debug-scripts');

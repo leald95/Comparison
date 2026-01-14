@@ -44,9 +44,11 @@ A modern web application to compare endpoints between SentinelOne (EDR) and Ninj
    ```bash
    # Copy the example .env file
    cp .env.example .env
-   
+    
    # Edit .env and add your credentials
    ```
+   
+   **Important:** Set `FLASK_SECRET_KEY` for any non-debug deployment (required when `FLASK_DEBUG=0`).
 
    **SentinelOne API:**
    - `SENTINELONE_API_URL`: Your SentinelOne console URL
@@ -79,6 +81,9 @@ A modern web application to compare endpoints between SentinelOne (EDR) and Ninj
    - `ENABLE_BASIC_AUTH=1`
    - `BASIC_AUTH_USERNAME=...`
    - `BASIC_AUTH_PASSWORD=...`
+   
+   If you must allow unauthenticated remote access (not recommended), set:
+   - `ALLOW_UNAUTHENTICATED_REMOTE=1`
 
 3. **Configure Remediation (Optional)**:
    - Click the ⚙️ **Settings** button in the header
