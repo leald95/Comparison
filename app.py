@@ -810,12 +810,13 @@ def read_excel_file(filepath):
 @app.route('/')
 def index():
     """Render the main page."""
-    # Clear all session data to prevent stale file references
+    # Clear only files from session to prevent stale file references, keep CSRF token
     old_files = session.get('files', {})
     if old_files:
-        logger.info(f'Clearing all session data on page load: {list(old_files.keys())}')
+        logger.info(f'Clearing stale session files on page load: {list(old_files.keys())}')
+        session.pop('files', None)
+        session.modified = True
     
-    session.clear()
     session.setdefault('csrf_token', uuid.uuid4().hex)
     return render_template('index.html', csrf_token=session['csrf_token'])
 
