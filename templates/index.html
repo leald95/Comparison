@@ -2800,6 +2800,7 @@
         };
 
         const SERVER_SESSION_VERSION = "{{ session_version }}";
+        const HISTORY_BACKEND = "{{ history_backend }}";
 
         // State
         const state = {
@@ -2814,6 +2815,7 @@
             clientName: null,
             currentNinjaOrgId: null,  // Track current org_id for device picker filtering
             lastHistorySave: null,  // Track last save timestamp to prevent duplicates
+            historyCache: [],
             remediationScriptId: null,  // Selected remediation script
             availableScripts: [],  // Available NinjaRMM scripts
             ninjaDevices: [],  // Store NinjaRMM devices with IDs for remediation
@@ -3517,7 +3519,41 @@
         }
 
         // History Management
+        const useDbHistory = (HISTORY_BACKEND || '').toLowerCase() === 'sqlite';
+
+        async function fetchHistoryFromServer() {
+            if (!useDbHistory || !state.clientId) return [];
+            try {
+                const resp = await fetch(`/comparisons?client_id=${encodeURIComponent(state.clientId)}&limit=50`);
+                const data = await resp.json();
+                if (!resp.ok || !data.success) throw new Error(data.error || 'Failed to load history');
+                state.historyCache = Array.isArray(data.comparisons) ? data.comparisons : [];
+                return state.historyCache;
+            } catch (err) {
+                console.error('Failed to fetch history:', err);
+                showToast('Failed to load history', 'error');
+                return state.historyCache || [];
+            }
+        }
+
+        async function fetchHistoryItemFromServer(id) {
+            if (!useDbHistory || !state.clientId) return null;
+            try {
+                const resp = await fetch(`/comparisons/${encodeURIComponent(id)}?client_id=${encodeURIComponent(state.clientId)}`);
+                const data = await resp.json();
+                if (!resp.ok || !data.success) throw new Error(data.error || 'Failed to load comparison');
+                return data.comparison;
+            } catch (err) {
+                console.error('Failed to fetch comparison:', err);
+                showToast('Failed to load comparison', 'error');
+                return null;
+            }
+        }
+
         function getHistory() {
+            if (useDbHistory) {
+                return state.historyCache || [];
+            }
             try {
                 return JSON.parse(localStorage.getItem('comparisonHistory') || '[]');
             } catch (e) {
@@ -3527,6 +3563,9 @@
         }
 
         function saveToHistory(data) {
+            if (useDbHistory) {
+                return null;
+            }
             try {
                 // Prevent duplicate saves within same second
                 const now = Date.now();
@@ -3603,8 +3642,25 @@
             }
         }
 
-        function deleteHistoryItem(id, event) {
+        async function deleteHistoryItem(id, event) {
             if (event) event.stopPropagation();
+
+            if (useDbHistory) {
+                try {
+                    const resp = await fetch('/comparisons/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id, client_id: state.clientId })
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok || !data.success) throw new Error(data.error || 'Delete failed');
+                    await renderHistory();
+                    return;
+                } catch (err) {
+                    showToast('Failed to delete history', 'error');
+                    return;
+                }
+            }
 
             let history = getHistory();
             history = history.filter(item => item.id !== id);
@@ -3617,6 +3673,9 @@
         }
 
         function cleanupDuplicateHistory() {
+            if (useDbHistory) {
+                return 0;
+            }
             // Remove duplicate entries from history (keeps most recent)
             try {
                 let history = getHistory();
@@ -3646,9 +3705,14 @@
             }
         }
 
-        function loadHistoryItem(id) {
-            const history = getHistory();
-            const item = history.find(i => i.id === id);
+        async function loadHistoryItem(id) {
+            let item = null;
+            if (useDbHistory) {
+                item = await fetchHistoryItemFromServer(id);
+            } else {
+                const history = getHistory();
+                item = history.find(i => i.id === id);
+            }
 
             if (!item) {
                 showToast('Results not found in history', 'error');
@@ -3662,6 +3726,9 @@
             state.file2.sourceType = item.file2Source;
             state.file1.offlineDevices = item.file1Offline || [];
             state.file2.offlineDevices = item.file2Offline || [];
+            if (item.offlineDaysThreshold) {
+                state.offlineDaysThreshold = item.offlineDaysThreshold;
+            }
 
             state.file1.uploaded = true;
             state.file2.uploaded = true;
@@ -3682,14 +3749,19 @@
             return `${days}d ago`;
         }
 
-        function renderHistory() {
+        async function renderHistory() {
             // Clean up any duplicates first
-            const duplicatesRemoved = cleanupDuplicateHistory();
-            if (duplicatesRemoved > 0) {
-                showToast(`Cleaned ${duplicatesRemoved} duplicate entries`, 'info', 2000);
+            if (!useDbHistory) {
+                const duplicatesRemoved = cleanupDuplicateHistory();
+                if (duplicatesRemoved > 0) {
+                    showToast(`Cleaned ${duplicatesRemoved} duplicate entries`, 'info', 2000);
+                }
             }
 
             const container = document.getElementById('history-list');
+            if (useDbHistory) {
+                await fetchHistoryFromServer();
+            }
             const history = getHistory();
 
             if (history.length === 0) {
@@ -5065,7 +5137,18 @@
                         file1_column: state.file1.column,
                         file2_sheet: state.file2.sheet,
                         file2_column: state.file2.column,
-                        client_id: state.clientId
+                        file1_name: state.file1.filename,
+                        file2_name: state.file2.filename,
+                        file1_source: state.file1.sourceType,
+                        file2_source: state.file2.sourceType,
+                        file1_offline_devices: state.file1.offlineDevices,
+                        file2_offline_devices: state.file2.offlineDevices,
+                        offline_days_threshold: state.offlineDaysThreshold,
+                        client_id: state.clientId,
+                        client_name: state.clientName,
+                        ad_days: state.ad.days,
+                        ad_device_id: state.ad.deviceId,
+                        ad_org_id: state.currentNinjaOrgId
                     })
                 });
 
@@ -6201,8 +6284,17 @@
                         file1_column: source1.column,
                         file2_sheet: source2.sheet,
                         file2_column: source2.column,
+                        file1_name: source1.filename,
+                        file2_name: source2.filename,
+                        file1_source: source1.sourceType,
+                        file2_source: source2.sourceType,
+                        file1_offline_devices: source1.offlineDevices || [],
+                        file2_offline_devices: source2.offlineDevices || [],
                         client_name: state.clientName,
-                        offline_days_threshold: state.offlineDaysThreshold
+                        offline_days_threshold: state.offlineDaysThreshold,
+                        ad_days: state.ad.days,
+                        ad_device_id: state.ad.deviceId,
+                        ad_org_id: state.currentNinjaOrgId
                     })
                 });
 

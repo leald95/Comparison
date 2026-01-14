@@ -85,6 +85,13 @@ A modern web application to compare endpoints between SentinelOne (EDR) and Ninj
    If you must allow unauthenticated remote access (not recommended), set:
    - `ALLOW_UNAUTHENTICATED_REMOTE=1`
 
+   **History storage (optional):**
+   - Default: browser localStorage (no server persistence)
+   - To use SQLite server history:
+     - `HISTORY_BACKEND=sqlite`
+     - `COMPARISON_DB_PATH=comparison_history.db`
+     - `HISTORY_RETENTION_DAYS=30`
+
 3. **Configure Remediation (Optional)**:
    - Click the ⚙️ **Settings** button in the header
    - Select a NinjaRMM script for SentinelOne installation/repair

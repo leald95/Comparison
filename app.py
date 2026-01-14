@@ -14,6 +14,7 @@ import base64
 import secrets
 import hmac
 import hashlib
+import sqlite3
 from urllib.parse import urlencode
 from flask import Flask, render_template, request, jsonify, session, Response, redirect, url_for, send_from_directory, make_response, g
 from itsdangerous import URLSafeSerializer, BadSignature
@@ -67,6 +68,13 @@ _CLIENT_ID_SIGNER = None
 _CLIENT_UPLOAD_LOCKS = {}
 _UPLOAD_LOCK_TTL_SECONDS = int(os.getenv('UPLOAD_LOCK_TTL_SECONDS', '60'))
 _DEBUG_MODE = os.getenv('FLASK_DEBUG', '0') in ('1', 'true', 'True')
+_HISTORY_BACKEND = os.getenv('HISTORY_BACKEND', 'local').lower()
+_HISTORY_RETENTION_DAYS = int(os.getenv('HISTORY_RETENTION_DAYS', '30'))
+_HISTORY_DB_PATH = os.path.abspath(os.getenv('COMPARISON_DB_PATH', 'comparison_history.db'))
+
+
+def _history_db_enabled():
+    return _HISTORY_BACKEND in ('sqlite', 'db', 'database')
 
 def _client_id_signer():
     global _CLIENT_ID_SIGNER
@@ -129,6 +137,125 @@ def _get_upload_retention_seconds():
     except Exception:
         hours = 24
     return max(0, hours) * 3600
+
+
+def _history_db_connection():
+    conn = sqlite3.connect(_HISTORY_DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _init_history_db():
+    if not _history_db_enabled():
+        return
+    os.makedirs(os.path.dirname(_HISTORY_DB_PATH) or '.', exist_ok=True)
+    with _history_db_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS comparisons (
+                id TEXT PRIMARY KEY,
+                client_id TEXT NOT NULL,
+                client_name TEXT,
+                created_at INTEGER NOT NULL,
+                source1_name TEXT,
+                source2_name TEXT,
+                source1_type TEXT,
+                source2_type TEXT,
+                source1_meta TEXT,
+                source2_meta TEXT,
+                ad_meta TEXT,
+                stats_json TEXT,
+                results_json TEXT,
+                offline_json TEXT
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_comparisons_client_time ON comparisons (client_id, created_at DESC)"
+        )
+        conn.commit()
+
+
+def _prune_history(conn):
+    if _HISTORY_RETENTION_DAYS <= 0:
+        return 0
+    cutoff = int(time.time()) - (_HISTORY_RETENTION_DAYS * 86400)
+    cur = conn.execute("DELETE FROM comparisons WHERE created_at < ?", (cutoff,))
+    return cur.rowcount
+
+
+def _store_comparison_history(result, request_data, client_id):
+    if not _history_db_enabled():
+        return None
+    comparison_id = str(uuid.uuid4())
+    created_at = int(time.time())
+    payload = {
+        'success': True,
+        'only_in_file1': result.get('only_in_file1', []),
+        'only_in_file2': result.get('only_in_file2', []),
+        'in_both': result.get('in_both', []),
+        'only_in_ad': result.get('only_in_ad', []),
+        'results_file1': result.get('results_file1', []),
+        'results_file2': result.get('results_file2', []),
+        'results_common': result.get('results_common', []),
+        'results_ad': result.get('results_ad', []),
+        'prefix_matches': result.get('prefix_matches', []),
+        'ad_attached': result.get('ad_attached', False),
+        'stats': result.get('stats', {}),
+    }
+
+    source1_meta = {
+        'sheet': request_data.get('file1_sheet'),
+        'column': request_data.get('file1_column'),
+        'file_id': request_data.get('file1_id'),
+    }
+    source2_meta = {
+        'sheet': request_data.get('file2_sheet'),
+        'column': request_data.get('file2_column'),
+        'file_id': request_data.get('file2_id'),
+    }
+    ad_meta = {
+        'attached': bool(result.get('ad_attached')),
+        'days': request_data.get('ad_days'),
+        'device_id': request_data.get('ad_device_id'),
+        'org_id': request_data.get('ad_org_id'),
+        'file_id': request_data.get('file3_id'),
+    }
+    offline_meta = {
+        'file1_offline': request_data.get('file1_offline_devices') or [],
+        'file2_offline': request_data.get('file2_offline_devices') or [],
+        'offline_days_threshold': request_data.get('offline_days_threshold'),
+    }
+
+    with _history_db_connection() as conn:
+        _prune_history(conn)
+        conn.execute(
+            """
+            INSERT INTO comparisons (
+                id, client_id, client_name, created_at,
+                source1_name, source2_name, source1_type, source2_type,
+                source1_meta, source2_meta, ad_meta, stats_json, results_json, offline_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                comparison_id,
+                client_id,
+                request_data.get('client_name'),
+                created_at,
+                request_data.get('file1_name'),
+                request_data.get('file2_name'),
+                request_data.get('file1_source'),
+                request_data.get('file2_source'),
+                json.dumps(source1_meta),
+                json.dumps(source2_meta),
+                json.dumps(ad_meta),
+                json.dumps(result.get('stats', {})),
+                json.dumps(payload),
+                json.dumps(offline_meta),
+            ),
+        )
+        conn.commit()
+    return comparison_id
 
 def _prune_upload_locks(now=None):
     now = now or time.time()
@@ -593,6 +720,7 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+_init_history_db()
 
 def _require_csrf():
     if request.method != 'POST':
@@ -1109,6 +1237,7 @@ def index():
         csrf_token=csrf_token,
         session_version=app.config['SERVER_SESSION_VERSION'],
         csp_nonce=getattr(g, 'csp_nonce', ''),
+        history_backend=_HISTORY_BACKEND,
     )
 
 
@@ -1295,7 +1424,7 @@ def compare_columns():
             # Both files are empty
             match_percentage = 0.0 if total_matches == 0 else 100.0
         
-        return jsonify({
+        result = {
             'success': True,
             'only_in_file1': [x['name'] for x in only_in_file1],
             'only_in_file2': [x['name'] for x in only_in_file2],
@@ -1320,7 +1449,13 @@ def compare_columns():
                 'prefix_match_count': len(prefix_matches),
                 'match_percentage': match_percentage
             }
-        })
+        }
+
+        history_id = _store_comparison_history(result, data, client_id)
+        if history_id:
+            result['comparison_id'] = history_id
+
+        return jsonify(result)
     
     except ValueError as e:
         logger.error('Compare read error: %s', str(e), exc_info=True)
@@ -1353,6 +1488,144 @@ def session_sync():
         'removed': [fid for fid, _path in removed],
         'session_version': app.config['SERVER_SESSION_VERSION'],
     })
+
+
+@app.route('/comparisons', methods=['GET'])
+def list_comparisons():
+    if not _history_db_enabled():
+        return jsonify({'error': 'History backend disabled'}), 404
+
+    client_id = _resolve_client_id({'client_id': request.args.get('client_id')})
+    if not client_id:
+        return jsonify({'error': 'client_id is required'}), 400
+
+    try:
+        limit = int(request.args.get('limit', '50'))
+    except Exception:
+        limit = 50
+    limit = max(1, min(limit, 200))
+
+    with _history_db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, client_name, created_at, source1_name, source2_name,
+                   source1_type, source2_type, stats_json
+            FROM comparisons
+            WHERE client_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (client_id, limit),
+        ).fetchall()
+
+    comparisons = []
+    for row in rows:
+        stats = {}
+        if row['stats_json']:
+            try:
+                stats = json.loads(row['stats_json'])
+            except Exception:
+                stats = {}
+
+        source1 = row['source1_type'] or row['source1_name'] or 'Source 1'
+        source2 = row['source2_type'] or row['source2_name'] or 'Source 2'
+        title = f"{row['client_name']} - {source1} vs {source2}" if row['client_name'] else f"{source1} vs {source2}"
+        comparisons.append({
+            'id': row['id'],
+            'timestamp': int(row['created_at']) * 1000,
+            'title': title,
+            'clientName': row['client_name'] or '',
+            'file1Name': row['source1_name'] or '',
+            'file2Name': row['source2_name'] or '',
+            'file1Source': row['source1_type'] or '',
+            'file2Source': row['source2_type'] or '',
+            'data': {'stats': stats},
+        })
+
+    return jsonify({'success': True, 'comparisons': comparisons})
+
+
+@app.route('/comparisons/<comparison_id>', methods=['GET'])
+def get_comparison(comparison_id):
+    if not _history_db_enabled():
+        return jsonify({'error': 'History backend disabled'}), 404
+
+    client_id = _resolve_client_id({'client_id': request.args.get('client_id')})
+    if not client_id:
+        return jsonify({'error': 'client_id is required'}), 400
+
+    with _history_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, client_name, created_at, source1_name, source2_name,
+                   source1_type, source2_type, results_json, offline_json
+            FROM comparisons
+            WHERE id = ? AND client_id = ?
+            """,
+            (comparison_id, client_id),
+        ).fetchone()
+
+    if not row:
+        return jsonify({'error': 'Comparison not found'}), 404
+
+    results = {}
+    offline = {}
+    try:
+        results = json.loads(row['results_json']) if row['results_json'] else {}
+    except Exception:
+        results = {}
+    try:
+        offline = json.loads(row['offline_json']) if row['offline_json'] else {}
+    except Exception:
+        offline = {}
+
+    entry = {
+        'id': row['id'],
+        'timestamp': int(row['created_at']) * 1000,
+        'title': '',
+        'clientName': row['client_name'] or '',
+        'file1Name': row['source1_name'] or '',
+        'file2Name': row['source2_name'] or '',
+        'file1Source': row['source1_type'] or '',
+        'file2Source': row['source2_type'] or '',
+        'file1Offline': offline.get('file1_offline', []),
+        'file2Offline': offline.get('file2_offline', []),
+        'offlineDaysThreshold': offline.get('offline_days_threshold'),
+        'data': results,
+    }
+
+    source1 = entry['file1Source'] or entry['file1Name'] or 'Source 1'
+    source2 = entry['file2Source'] or entry['file2Name'] or 'Source 2'
+    entry['title'] = f"{entry['clientName']} - {source1} vs {source2}" if entry['clientName'] else f"{source1} vs {source2}"
+
+    return jsonify({'success': True, 'comparison': entry})
+
+
+@app.route('/comparisons/delete', methods=['POST'])
+def delete_comparison():
+    if not _history_db_enabled():
+        return jsonify({'error': 'History backend disabled'}), 404
+
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
+    data = request.get_json(silent=True) or {}
+    comparison_id = data.get('id')
+    client_id = _resolve_client_id(data)
+    if not comparison_id or not client_id:
+        return jsonify({'error': 'id and client_id are required'}), 400
+
+    with _history_db_connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM comparisons WHERE id = ? AND client_id = ?",
+            (comparison_id, client_id),
+        )
+        conn.commit()
+
+    if cur.rowcount == 0:
+        return jsonify({'error': 'Comparison not found'}), 404
+    return jsonify({'success': True, 'deleted': comparison_id})
 
 
 @app.route('/sentinelone/sites', methods=['GET'])
