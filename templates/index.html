@@ -5634,6 +5634,7 @@
                     });
                     const uploadData = await response.json();
                     if (uploadData.success) {
+                        state.file1.fileId = '1';
                         state.file1.uploaded = true;
                         state.file1.filename = `${s1Name || 'SentinelOne'} Endpoints`;
                         state.file1.sourceType = 'SentinelOne';
@@ -5655,6 +5656,7 @@
                     });
                     const uploadData = await response.json();
                     if (uploadData.success) {
+                        state.file2.fileId = '2'; // Add fileId to state
                         state.file2.uploaded = true;
                         state.file2.filename = `${ninjaName || 'NinjaRMM'} Devices`;
                         state.file2.sourceType = 'NinjaRMM';
