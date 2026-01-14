@@ -2555,11 +2555,15 @@ def ad_attach():
     if not entry:
         return jsonify({'error': 'AD snapshot not available yet'}), 404
 
+    logger.info(f'AD attach - session files BEFORE: {session.get("files", {})}')
+
     if 'files' not in session:
         session['files'] = {}
 
     session['files'][file_id] = entry['path']
     session.modified = True
+
+    logger.info(f'AD attach - session files AFTER: {session.get("files", {})}')
 
     return jsonify({
         'success': True,
