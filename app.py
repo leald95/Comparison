@@ -273,6 +273,10 @@ def _normalize_session_files_keys():
 
     # Make session permanent to persist across requests
     session.permanent = True
+    
+    # Log session info for debugging
+    session_id = request.cookies.get('session', 'NO_COOKIE')[:20] if request.cookies.get('session') else 'NO_COOKIE'
+    logger.debug(f'Request {request.path} - Session ID: {session_id} - Files in session: {list(session.get("files", {}).keys())}')
 
     files = session.get('files')
     if isinstance(files, dict):
