@@ -2796,6 +2796,8 @@
             return _origFetch(url, options);
         };
 
+        const SERVER_SESSION_VERSION = "{{ session_version }}";
+
         // State
         const state = {
             file1: { fileId: '1', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, sourceConfig: null, offlineDevices: [] },
@@ -2824,6 +2826,26 @@
             })(),
             selectedSources: { s1: false, ninja: false, ad: false }  // Track which sources user wants to compare
         };
+
+        async function syncSessionFiles(reason = '') {
+            if (!state.clientId) return null;
+            try {
+                const response = await fetch('/session/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ client_id: state.clientId, reason })
+                });
+                const data = await response.json();
+                if (!data.success) return null;
+                if (data.removed && data.removed.length) {
+                    showToast('Some uploaded files expired. Please reload sources.', 'error');
+                }
+                return data;
+            } catch (err) {
+                console.warn('Session sync failed:', err);
+                return null;
+            }
+        }
 
         // Last Source Config
         function saveLastSourceConfig(fileId, type, id, name) {
@@ -2921,7 +2943,7 @@
         }
 
         // Cache Helpers with TTL validation and size management
-        function getCache(source, id) {
+        function getCache(source, id, options = {}) {
             const key = `api_cache_${source}_${id}`;
             const cached = localStorage.getItem(key);
             if (!cached) return null;
@@ -2938,6 +2960,15 @@
                     return null;
                 }
 
+                if (options.clientId && data.client_id !== options.clientId) {
+                    localStorage.removeItem(key);
+                    return null;
+                }
+                if (options.fileId && data.file_id && data.file_id !== options.fileId) {
+                    localStorage.removeItem(key);
+                    return null;
+                }
+
                 console.log(`Cache hit for ${key} (age: ${Math.round(age / 60000)}min)`);
                 return data;
             } catch (e) {
@@ -2947,12 +2978,14 @@
             }
         }
 
-        function setCache(source, id, name, data) {
+        function setCache(source, id, name, data, meta = {}) {
             const key = `api_cache_${source}_${id}`;
             const cacheObj = {
                 timestamp: Date.now(),
                 name: name,
-                data: data
+                data: data,
+                client_id: meta.client_id || meta.clientId || state.clientId,
+                file_id: meta.file_id || meta.fileId || null
             };
 
             // Manage cache size - limit to 50 entries
@@ -3035,6 +3068,11 @@
             }
         }
 
+        function clearAllApiCache() {
+            const cacheKeys = Object.keys(localStorage).filter(k => k.startsWith('api_cache_'));
+            cacheKeys.forEach(key => localStorage.removeItem(key));
+        }
+
         // Utility functions
         function showToast(message, type = 'info', duration = 4000, onClick = null) {
             const existing = document.querySelector('.toast');
@@ -3059,6 +3097,21 @@
 
             setTimeout(() => toast.remove(), duration);
         }
+
+        function handleSessionVersion() {
+            const storedVersion = localStorage.getItem('serverSessionVersion');
+            if (storedVersion && storedVersion !== SERVER_SESSION_VERSION) {
+                clearAllApiCache();
+                localStorage.removeItem('lastSourceConfig');
+                localStorage.removeItem('adAttached');
+                localStorage.removeItem('adCount');
+                showToast('Server restarted. Reload sources to continue.', 'info');
+            }
+            localStorage.setItem('serverSessionVersion', SERVER_SESSION_VERSION);
+        }
+
+        handleSessionVersion();
+        pruneExpiredCache();
 
         function toggleOfflineSection() {
             const offlineSection = document.getElementById('offline-section');
@@ -3703,7 +3756,7 @@
                 data.sites.sort((a, b) => a.name.localeCompare(b.name));
 
                 const siteItems = data.sites.map(site => {
-                    const cache = getCache('S1', site.id || 'all');
+                    const cache = getCache('S1', site.id || 'all', { clientId: state.clientId });
                     const lastPulled = cache ? `<span class="cache-badge">Last pulled: ${formatTimeAgo(cache.timestamp)}</span>` : '';
 
                     return `
@@ -3716,7 +3769,7 @@
                 }).join('');
 
                 // All Sites option needs a cache check too
-                const allSitesCache = getCache('S1', 'all');
+                const allSitesCache = getCache('S1', 'all', { clientId: state.clientId });
                 const allSitesLastPulled = allSitesCache ? `<span class="cache-badge">Last pulled: ${formatTimeAgo(allSitesCache.timestamp)}</span>` : '';
 
                 const allSitesOption = `
@@ -3776,7 +3829,7 @@
             console.log(`DEBUG selectSite: siteId=${siteId}, siteName=${siteName}, fileId=${fileId}, skipCache=${skipCache}`);
             siteId = siteId || 'all';
             console.log(`DEBUG selectSite: After normalization, siteId=${siteId}`);
-            const cache = !skipCache ? getCache('S1', siteId) : null;
+            const cache = !skipCache ? getCache('S1', siteId, { clientId: state.clientId }) : null;
 
             if (cache) {
                 console.log('Using cached data for site:', siteName, 'Slot:', fileId);
@@ -3923,7 +3976,10 @@
                 }
 
                 // Cache the fresh data
-                setCache('S1', siteId || 'all', siteName, data);
+                setCache('S1', siteId || 'all', siteName, data, {
+                    client_id: state.clientId,
+                    file_id: fileId
+                });
 
                 // Calculate offline devices
                 const cutoffDate = new Date();
@@ -4101,7 +4157,7 @@
                 }
 
                 // Add "All Organizations" option
-                const allOrgsCache = getCache('Ninja', 'all');
+                const allOrgsCache = getCache('Ninja', 'all', { clientId: state.clientId });
                 const allOrgsLastPulled = allOrgsCache ? `<span class="cache-badge">Last pulled: ${formatTimeAgo(allOrgsCache.timestamp)}</span>` : '';
 
                 const allOrgsOption = `
@@ -4113,7 +4169,7 @@
                 `;
 
                 const orgItems = data.organizations.map(org => {
-                    const cache = getCache('Ninja', org.id || 'all');
+                    const cache = getCache('Ninja', org.id || 'all', { clientId: state.clientId });
                     const lastPulled = cache ? `<span class="cache-badge">Last pulled: ${formatTimeAgo(cache.timestamp)}</span>` : '';
 
                     return `
@@ -4178,7 +4234,7 @@
 
         async function selectNinjaOrganization(orgId, orgName, fileId, skipCache = false) {
             orgId = orgId || 'all';
-            const cache = !skipCache ? getCache('Ninja', orgId) : null;
+            const cache = !skipCache ? getCache('Ninja', orgId, { clientId: state.clientId }) : null;
 
             if (cache) {
                 console.log('Using cached data for organization:', orgName, 'Slot:', fileId);
@@ -4551,7 +4607,10 @@
                 }
 
                 // Cache the fresh data
-                setCache('Ninja', orgId || 'all', orgName, data);
+                setCache('Ninja', orgId || 'all', orgName, data, {
+                    client_id: state.clientId,
+                    file_id: fileId
+                });
 
                 // Calculate offline devices
                 const cutoffTimestamp = (Date.now() / 1000) - (state.offlineDaysThreshold * 24 * 60 * 60);
@@ -4745,6 +4804,7 @@
         async function runComparison() {
             try {
                 // Use state values instead of DOM elements that no longer exist
+                await syncSessionFiles('compare');
                 const response = await fetch('/compare', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -4769,7 +4829,12 @@
                     throw new Error(data.error);
                 }
             } catch (err) {
-                showToast(err.message || 'Comparison failed', 'error');
+                const msg = err.message || 'Comparison failed';
+                if (/Files not found|Both files must be uploaded|uploaded files are missing/i.test(msg)) {
+                    showToast('Session expired. Reload sources and try again.', 'error');
+                } else {
+                    showToast(msg, 'error');
+                }
             } finally {
                 // Removed button loading state - no longer have manual compare button
                 updateCompareButton();
@@ -5838,6 +5903,7 @@
             const source2 = sources[1];
 
             try {
+                await syncSessionFiles('compare-primary');
                 const response = await fetch('/compare', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -5864,7 +5930,12 @@
                     throw new Error(data.error);
                 }
             } catch (err) {
-                showToast(err.message || 'Comparison failed', 'error');
+                const msg = err.message || 'Comparison failed';
+                if (/Files not found|Both files must be uploaded|uploaded files are missing/i.test(msg)) {
+                    showToast('Session expired. Reload sources and try again.', 'error');
+                } else {
+                    showToast(msg, 'error');
+                }
                 throw err;
             }
         }
@@ -5878,7 +5949,7 @@
                     method: 'POST',
                     keepalive: true,
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ csrf_token: csrfToken })
+                    body: JSON.stringify({ csrf_token: csrfToken, client_id: state.clientId })
                 });
             }
         });
@@ -6237,11 +6308,11 @@
                 progressDetailsList.forEach(detail => detail.textContent = 'Please wait while we collect Active Directory data');
             }
 
-            try {
-                const endpoint = options.syncOnly ? '/ad/sync' : '/ad/trigger';
+                try {
+                    const endpoint = options.syncOnly ? '/ad/sync' : '/ad/trigger';
 
-                // Update progress for script execution
-                if (!options.syncOnly && progressMsg) {
+                    // Update progress for script execution
+                    if (!options.syncOnly && progressMsg) {
                     setTimeout(() => {
                         progressMsg.textContent = 'Script running on domain controller...';
                         progressDetails.textContent = 'Querying Active Directory for computer accounts';
@@ -6249,36 +6320,51 @@
                     setTimeout(() => {
                         progressMsg.textContent = 'Waiting for results...';
                         progressDetails.textContent = 'Polling for inventory data from custom field';
-                    }, 5000);
-                }
+                        }, 5000);
+                    }
 
-                const triggerResp = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        client,
-                        days,
-                        org_id: state.currentNinjaOrgId,
-                        device_id: state.ad.deviceId,
-                        script_id: state.ad.scriptId
-                    })
-                });
+                    await syncSessionFiles('ad');
 
-                const triggerData = await triggerResp.json();
-                if (!triggerData.success) throw new Error(triggerData.error || `Failed to ${options.syncOnly ? 'sync' : 'trigger'} AD inventory`);
+                    const triggerResp = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            client,
+                            days,
+                            org_id: state.currentNinjaOrgId,
+                            device_id: state.ad.deviceId,
+                            script_id: state.ad.scriptId,
+                            file_id: '3',
+                            auto_attach: true,
+                            client_id: state.clientId
+                        })
+                    });
 
-                // /ad/trigger or /ad/sync caches the snapshot server-side
-                const attachResp = await fetch('/ad/attach', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ client, days, file_id: '3', client_id: state.clientId })
-                });
+                    const triggerData = await triggerResp.json();
+                    if (!triggerData.success) throw new Error(triggerData.error || `Failed to ${options.syncOnly ? 'sync' : 'trigger'} AD inventory`);
 
-                const attachData = await attachResp.json();
-                if (!attachData.success) throw new Error(attachData.error || 'Failed to attach AD inventory');
+                    let attachData = triggerData.attached ? triggerData : null;
+                    if (!attachData) {
+                        // /ad/trigger or /ad/sync caches the snapshot server-side
+                        const attachResp = await fetch('/ad/attach', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                client,
+                                days,
+                                file_id: '3',
+                                org_id: state.currentNinjaOrgId,
+                                device_id: state.ad.deviceId,
+                                client_id: state.clientId
+                            })
+                        });
 
-                state.ad.attached = true;
-                state.ad.count = attachData.row_count || 0;
+                        attachData = await attachResp.json();
+                        if (!attachData.success) throw new Error(attachData.error || 'Failed to attach AD inventory');
+                    }
+
+                    state.ad.attached = true;
+                    state.ad.count = attachData.row_count || 0;
                 localStorage.setItem('adAttached', 'true');
                 localStorage.setItem('adCount', state.ad.count);
                 state.adSource = {

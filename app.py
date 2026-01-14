@@ -15,7 +15,8 @@ import secrets
 import hmac
 import hashlib
 from urllib.parse import urlencode
-from flask import Flask, render_template, request, jsonify, session, Response, redirect, url_for, send_from_directory, make_response
+from flask import Flask, render_template, request, jsonify, session, Response, redirect, url_for, send_from_directory, make_response, g
+from itsdangerous import URLSafeSerializer, BadSignature
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import pandas as pd
@@ -59,12 +60,176 @@ _load_ninja_token_cache()
 # Global store for file paths, keyed by frontend clientId.
 # This acts as a backup to the Flask session, which can be unstable in some environments.
 _CLIENT_FILE_STORE = {}
+_CLIENT_ID_COOKIE_NAME = 'comparison_client_id'
+_CLIENT_ID_COOKIE_MAX_AGE_SECONDS = int(os.getenv('CLIENT_ID_COOKIE_MAX_AGE_SECONDS', '2592000'))
+_CLIENT_ID_SIGNER = None
+
+_CLIENT_UPLOAD_LOCKS = {}
+_UPLOAD_LOCK_TTL_SECONDS = int(os.getenv('UPLOAD_LOCK_TTL_SECONDS', '60'))
+
+def _client_id_signer():
+    global _CLIENT_ID_SIGNER
+    if _CLIENT_ID_SIGNER is None:
+        _CLIENT_ID_SIGNER = URLSafeSerializer(app.config['SECRET_KEY'], salt='comparison-client-id')
+    return _CLIENT_ID_SIGNER
+
+def _get_client_id_from_cookie():
+    raw = request.cookies.get(_CLIENT_ID_COOKIE_NAME)
+    if not raw:
+        return None
+    try:
+        return _client_id_signer().loads(raw)
+    except BadSignature:
+        return None
+
+def _resolve_client_id(data=None):
+    """Resolve client_id from request JSON, session, or signed cookie."""
+    payload = {}
+    if isinstance(data, dict):
+        payload = data
+    elif request.is_json:
+        payload = request.get_json(silent=True) or {}
+
+    client_id = payload.get('client_id') if isinstance(payload, dict) else None
+    if not client_id:
+        client_id = session.get('client_id')
+    if not client_id:
+        client_id = _get_client_id_from_cookie()
+    if client_id:
+        client_id = str(client_id)
+        session['client_id'] = client_id
+        session.modified = True
+        g.client_id = client_id
+    return client_id
 
 def _get_client_id(data=None):
-    """Extract client_id from request JSON or fallback to session."""
-    if not data:
-        data = request.get_json(silent=True) or {}
-    return data.get('client_id')
+    """Extract client_id from request JSON, session, or cookie."""
+    return _resolve_client_id(data)
+
+def _touch_client_store(client_id):
+    if client_id and client_id in _CLIENT_FILE_STORE:
+        _CLIENT_FILE_STORE[client_id]['last_access'] = time.time()
+
+def _get_client_store_retention_seconds():
+    try:
+        hours = int(os.getenv('CLIENT_STORE_RETENTION_HOURS', os.getenv('UPLOAD_RETENTION_HOURS', '24')))
+    except Exception:
+        hours = 24
+    return max(0, hours) * 3600
+
+def _get_upload_retention_seconds():
+    try:
+        hours = int(os.getenv('UPLOAD_RETENTION_HOURS', '24'))
+    except Exception:
+        hours = 24
+    return max(0, hours) * 3600
+
+def _prune_upload_locks(now=None):
+    now = now or time.time()
+    stale_keys = [k for k, ts in _CLIENT_UPLOAD_LOCKS.items() if now - ts >= _UPLOAD_LOCK_TTL_SECONDS]
+    for k in stale_keys:
+        _CLIENT_UPLOAD_LOCKS.pop(k, None)
+
+def _acquire_upload_lock(client_id, file_id):
+    if not client_id:
+        return None
+    _prune_upload_locks()
+    lock_key = f'{client_id}:{file_id}'
+    if lock_key in _CLIENT_UPLOAD_LOCKS:
+        return None
+    _CLIENT_UPLOAD_LOCKS[lock_key] = time.time()
+    return lock_key
+
+def _release_upload_lock(lock_key):
+    if lock_key:
+        _CLIENT_UPLOAD_LOCKS.pop(lock_key, None)
+
+def _prune_client_store(now=None, retention_seconds=None):
+    now = now or time.time()
+    retention_seconds = retention_seconds if retention_seconds is not None else _get_client_store_retention_seconds()
+    current_store_keys = list(_CLIENT_FILE_STORE.keys())
+    for cid in current_store_keys:
+        if cid in _CLIENT_FILE_STORE:
+            age = now - _CLIENT_FILE_STORE[cid].get('last_access', 0)
+            if age >= retention_seconds:
+                del _CLIENT_FILE_STORE[cid]
+                logger.info('Pruned client %s from global store (age: %dh)', cid, int(age / 3600))
+
+def _collect_referenced_paths():
+    referenced = set()
+    session_files = session.get('files', {})
+    if isinstance(session_files, dict):
+        referenced.update(session_files.values())
+    for store in _CLIENT_FILE_STORE.values():
+        store_files = store.get('files', {})
+        if isinstance(store_files, dict):
+            referenced.update(store_files.values())
+    return {os.path.abspath(p) for p in referenced if p}
+
+def _remove_client_file_ref(client_id, file_id):
+    if client_id and client_id in _CLIENT_FILE_STORE:
+        _CLIENT_FILE_STORE[client_id]['files'].pop(str(file_id), None)
+
+def _prune_missing_file_refs(files, client_id=None, update_session=False, update_store=False):
+    if not isinstance(files, dict):
+        return {}, []
+    removed = []
+    for fid, path in list(files.items()):
+        if not path or not os.path.exists(path):
+            removed.append((fid, path))
+            files.pop(fid, None)
+            if update_store and client_id and client_id in _CLIENT_FILE_STORE:
+                _CLIENT_FILE_STORE[client_id]['files'].pop(fid, None)
+    if removed and update_session:
+        session['files'] = files
+        session.modified = True
+    return files, removed
+
+def _get_session_files_with_prune(client_id=None):
+    """Get files from session, merging global store and pruning missing paths."""
+    _prune_client_store()
+    files = session.get('files', {})
+    files = dict(files) if isinstance(files, dict) else {}
+    files, removed_session = _prune_missing_file_refs(files, client_id=client_id, update_session=True)
+
+    removed_store = []
+    store_files = {}
+    if client_id and client_id in _CLIENT_FILE_STORE:
+        store_files = dict(_CLIENT_FILE_STORE[client_id].get('files', {}))
+        store_files, removed_store = _prune_missing_file_refs(store_files, client_id=client_id, update_store=True)
+        _touch_client_store(client_id)
+
+        if store_files:
+            if not files:
+                files = dict(store_files)
+                session['files'] = files
+                session.modified = True
+                logger.info('Healed session for client %s from global store', client_id)
+            elif isinstance(files, dict):
+                merged = {**store_files, **files}
+                if merged != files:
+                    session['files'] = merged
+                    session.modified = True
+                    files = merged
+                    logger.info('Merged session files for client %s from global store', client_id)
+
+    return files, removed_session + removed_store
+
+def _get_session_files(client_id=None):
+    """Get files from session, falling back to global store if missing."""
+    files, _ = _get_session_files_with_prune(client_id)
+    return files
+
+def _describe_files_map(files):
+    if not isinstance(files, dict):
+        return {}
+    desc = {}
+    for fid, path in files.items():
+        desc[str(fid)] = {
+            'path': path,
+            'exists': bool(path and os.path.exists(path)),
+        }
+    return desc
 
 def _set_session_file(file_id, filepath, client_id=None):
     """Store filepath in both session and global store."""
@@ -73,40 +238,17 @@ def _set_session_file(file_id, filepath, client_id=None):
         session['files'] = {}
     session['files'][file_id] = filepath
     session.modified = True
-    
+
     if client_id:
         if client_id not in _CLIENT_FILE_STORE:
             _CLIENT_FILE_STORE[client_id] = {'files': {}, 'last_access': time.time()}
         _CLIENT_FILE_STORE[client_id]['files'][file_id] = filepath
         _CLIENT_FILE_STORE[client_id]['last_access'] = time.time()
-        logger.info(f'Stored file {file_id} in global store for client {client_id}')
-
-def _get_session_files(client_id=None):
-    """Get files from session, falling back to global store if missing."""
-    files = session.get('files', {})
-
-    if client_id and client_id in _CLIENT_FILE_STORE:
-        store_files = _CLIENT_FILE_STORE[client_id].get('files', {})
-        if store_files:
-            _CLIENT_FILE_STORE[client_id]['last_access'] = time.time()
-            if not files:
-                files = dict(store_files)
-                session['files'] = files
-                session.modified = True
-                logger.info(f'Healed session for client {client_id} from global store')
-            elif isinstance(files, dict):
-                merged = {**store_files, **files}
-                if merged != files:
-                    session['files'] = merged
-                    session.modified = True
-                    files = merged
-                    logger.info(f'Merged session files for client {client_id} from global store')
-
-    return files
+        logger.info('Stored file %s in global store for client %s', file_id, client_id)
 
 
 # In-process cache for Active Directory device snapshots received from Ninja
-# Key: (client_name, days) -> {path, count, received_at}
+# Key: (client_name, days, org_id, device_id) -> {path, count, received_at, org_id, device_id}
 _AD_CACHE = {}
 
 # AD inventory storage (written by the Ninja-run PowerShell script)
@@ -116,6 +258,7 @@ _AD_CUSTOM_FIELD_NAME = 'ADInventoryJson'
 # Key: nonce -> {client, days, signing_key, expires_at}
 _AD_INTAKE_NONCES = {}
 _AD_INTAKE_NONCE_TTL_SECONDS = 15 * 60
+_SOURCE_COLUMN_NAME = 'Name'
 
 
 def _get_ninja_api_url():
@@ -137,6 +280,48 @@ def _prune_ad_intake_nonces(now=None):
     expired = [t for t, v in _AD_INTAKE_NONCES.items() if v.get('expires_at', 0) <= now]
     for t in expired:
         _AD_INTAKE_NONCES.pop(t, None)
+
+def _ad_cache_key(client, days, org_id=None, device_id=None):
+    try:
+        days = int(days)
+    except Exception:
+        pass
+    try:
+        org_id = int(org_id) if org_id is not None else None
+    except Exception:
+        org_id = None
+    try:
+        device_id = int(device_id) if device_id is not None else None
+    except Exception:
+        device_id = None
+    return (client, days, org_id, device_id)
+
+def _store_ad_cache_entry(entry, client, clean_client, days, org_id=None, device_id=None):
+    _AD_CACHE[_ad_cache_key(client, days, org_id, device_id)] = entry
+    if clean_client and clean_client != client:
+        _AD_CACHE[_ad_cache_key(clean_client, days, org_id, device_id)] = entry
+
+def _find_latest_ad_entry(client, days):
+    latest = None
+    latest_ts = -1
+    for (c, d, _o, _dev), entry in _AD_CACHE.items():
+        if c == client and d == days:
+            ts = entry.get('received_at', 0)
+            if ts > latest_ts:
+                latest = entry
+                latest_ts = ts
+    return latest
+
+def _lookup_ad_cache_entry(client, days, org_id=None, device_id=None):
+    if not client:
+        return None
+    clean_client = _sanitize_client_name(client)
+    entry = _AD_CACHE.get(_ad_cache_key(client, days, org_id, device_id))
+    if not entry and clean_client and clean_client != client:
+        entry = _AD_CACHE.get(_ad_cache_key(clean_client, days, org_id, device_id))
+    if not entry and org_id is None and device_id is None:
+        entry = _find_latest_ad_entry(clean_client or client, days)
+    return entry
 
 
 def _fetch_with_retry(url, headers=None, auth=None, params=None, timeout=30, max_retries=3):
@@ -295,6 +480,7 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = False
 app.config['SESSION_REFRESH_EACH_REQUEST'] = True
 app.config['SESSION_COOKIE_DOMAIN'] = None
+app.config['SERVER_SESSION_VERSION'] = uuid.uuid4().hex
 
 
 def _require_basic_auth():
@@ -326,15 +512,22 @@ def _normalize_session_files_keys():
     session_cookie = request.cookies.get('session', 'NO_COOKIE')
     session_id = session_cookie[:20] if session_cookie != 'NO_COOKIE' else 'NO_COOKIE'
     all_cookies = list(request.cookies.keys())
-    logger.info(f'Request {request.path} - Session ID: {session_id} - Files: {list(session.get("files", {}).keys())} - All cookies: {all_cookies}')
+    client_id = _resolve_client_id()
+    logger.info(
+        'Request %s - Session ID: %s - Client: %s - Files: %s - All cookies: %s',
+        request.path,
+        session_id,
+        client_id or 'NO_CLIENT',
+        list(session.get('files', {}).keys()),
+        all_cookies,
+    )
     
     # Log session creation
     if 'session_created' not in session:
         logger.info(f'New session created for {request.path}')
         session['session_created'] = True
 
-    # Use the diagnostic client_id if available to heal session
-    client_id = request.get_json(silent=True).get('client_id') if request.is_json else None
+    # Use the resolved client_id to heal session
     files = _get_session_files(client_id)
     
     if isinstance(files, dict):
@@ -353,6 +546,21 @@ def _set_security_headers(resp):
         'Content-Security-Policy',
         "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'"
     )
+    client_id = getattr(g, 'client_id', None) or session.get('client_id')
+    if client_id:
+        try:
+            signed = _client_id_signer().dumps(str(client_id))
+            if request.cookies.get(_CLIENT_ID_COOKIE_NAME) != signed:
+                resp.set_cookie(
+                    _CLIENT_ID_COOKIE_NAME,
+                    signed,
+                    max_age=_CLIENT_ID_COOKIE_MAX_AGE_SECONDS,
+                    httponly=True,
+                    samesite='Lax',
+                    secure=app.config['SESSION_COOKIE_SECURE'],
+                )
+        except Exception as e:
+            logger.warning('Failed to set client_id cookie: %s', e)
     return resp
 
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -871,7 +1079,11 @@ def index():
         session['csrf_token'] = csrf_token
         session.modified = True
     
-    return render_template('index.html', csrf_token=csrf_token)
+    return render_template(
+        'index.html',
+        csrf_token=csrf_token,
+        session_version=app.config['SERVER_SESSION_VERSION'],
+    )
 
 
 @app.route('/favicon.ico')
@@ -903,6 +1115,18 @@ def compare_columns():
     logger.info(f'Compare request: file1_id={file1_id}, file2_id={file2_id}, file3_id={file3_id}, client_id={client_id}')
     logger.info(f'Files available: {list(files.keys())}')
 
+    missing_fields = []
+    if not file1_sheet:
+        missing_fields.append('file1_sheet')
+    if not file1_column:
+        missing_fields.append('file1_column')
+    if not file2_sheet:
+        missing_fields.append('file2_sheet')
+    if not file2_column:
+        missing_fields.append('file2_column')
+    if missing_fields:
+        return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+
     if not files:
         logger.error(f'No files found for client {client_id} (Session: {list(session.get("files", {}).keys())})')
         return jsonify({'error': 'Files not found. Please upload again.'}), 400
@@ -919,10 +1143,22 @@ def compare_columns():
     logger.info(f'File1 exists: {os.path.exists(file1_path)}')
     logger.info(f'File2 exists: {os.path.exists(file2_path)}')
 
+    if not os.path.exists(file1_path) or not os.path.exists(file2_path):
+        if not os.path.exists(file1_path):
+            _remove_client_file_ref(client_id, file1_id)
+        if not os.path.exists(file2_path):
+            _remove_client_file_ref(client_id, file2_id)
+        return jsonify({'error': 'One or more uploaded files are missing. Please upload again.'}), 400
+
     try:
         # Read files
         df1 = pd.read_excel(file1_path, sheet_name=file1_sheet)
         df2 = pd.read_excel(file2_path, sheet_name=file2_sheet)
+
+        if file1_column not in df1.columns:
+            return jsonify({'error': f'Column \"{file1_column}\" not found in file 1'}), 400
+        if file2_column not in df2.columns:
+            return jsonify({'error': f'Column \"{file2_column}\" not found in file 2'}), 400
         
         # Load AD data if provided
         set3_norm = set()
@@ -1060,12 +1296,37 @@ def compare_columns():
             }
         })
     
+    except ValueError as e:
+        logger.error('Compare read error: %s', str(e), exc_info=True)
+        return jsonify({'error': str(e)}), 400
     except KeyError as e:
         logger.error(f'Column not found error in compare: {str(e)}', exc_info=True)
         return jsonify({'error': f'Column not found: {str(e)}'}), 400
     except Exception as e:
         logger.error(f'Comparison error: {str(e)}', exc_info=True)
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/session/sync', methods=['POST'])
+def session_sync():
+    """Sync session files from global store for the given client_id."""
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
+    data = request.get_json(silent=True) or {}
+    client_id = _resolve_client_id(data)
+    files, removed = _get_session_files_with_prune(client_id)
+
+    logger.info('Session sync for client_id=%s - files=%s removed=%s', client_id or 'NO_CLIENT', list(files.keys()), [r[0] for r in removed])
+
+    return jsonify({
+        'success': True,
+        'client_id': client_id,
+        'files': list(files.keys()),
+        'removed': [fid for fid, _path in removed],
+        'session_version': app.config['SERVER_SESSION_VERSION'],
+    })
 
 
 @app.route('/sentinelone/sites', methods=['GET'])
@@ -1219,58 +1480,68 @@ def upload_sentinelone_data():
     data = request.json
     file_id = str(data.get('file_id', '1'))
     endpoints = data.get('endpoints', [])
-    
+    client_id = _resolve_client_id(data)
+
+    logger.info('SentinelOne upload - client_id=%s file_id=%s', client_id or 'NO_CLIENT', file_id)
+
     if not endpoints:
         return jsonify({'error': 'No endpoints provided'}), 400
-    
+
+    lock_key = _acquire_upload_lock(client_id, file_id)
+    if client_id and not lock_key:
+        return jsonify({'error': 'Upload already in progress. Please retry.'}), 409
+
     try:
         # Extract names from device objects (keep all devices, no filtering)
         endpoint_names = [ep['name'] if isinstance(ep, dict) else ep for ep in endpoints]
-        
+
         # Create a DataFrame from endpoints
-        df = pd.DataFrame({'Endpoint Name': endpoint_names})
-        
+        df = pd.DataFrame({_SOURCE_COLUMN_NAME: endpoint_names})
+
         # Generate unique filename
         unique_id = str(uuid.uuid4())
         filename = f'sentinelone_endpoints_{unique_id}.xlsx'
         filepath = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        
+
         # Save to Excel
         df.to_excel(filepath, index=False, engine='openpyxl')
-        
+
         # Verify file was created
         if not os.path.exists(filepath):
-            logger.error(f'File creation failed: {filepath}')
+            logger.error('File creation failed: %s', filepath)
             return jsonify({'error': 'File creation failed'}), 500
-        
-        logger.info(f'Created SentinelOne file: {filename} ({len(endpoint_names)} endpoints)')
-        
+
+        logger.info('Created SentinelOne file: %s (%d endpoints) client_id=%s', filename, len(endpoint_names), client_id or 'NO_CLIENT')
+
         # Delete old file if it exists in session
         if 'files' in session and file_id in session['files']:
             old_filepath = session['files'][file_id]
             try:
                 if os.path.exists(old_filepath):
                     os.remove(old_filepath)
-                    logger.info(f'Removed old file: {old_filepath}')
+                    logger.info('Removed old file: %s', old_filepath)
             except Exception as e:
-                logger.warning(f'Failed to remove old file {old_filepath}: {e}')
-        
+                logger.warning('Failed to remove old file %s: %s', old_filepath, e)
+            _remove_client_file_ref(client_id, file_id)
+
         # Store filepath in both session and global store for resilience
-        _set_session_file(file_id, filepath, _get_client_id(data))
-        
-        logger.info(f'Session files after upload: {session.get("files", {})}')
-        
+        _set_session_file(file_id, filepath, client_id)
+
+        logger.info('Session files after upload: %s', session.get('files', {}))
+
         return jsonify({
             'success': True,
             'filename': 'SentinelOne Endpoints',
             'sheets': ['Sheet1'],
-            'columns': ['Endpoint Name'],
+            'columns': [_SOURCE_COLUMN_NAME],
             'row_count': len(endpoint_names)
         })
-    
+
     except Exception as e:
-        logger.error(f'SentinelOne upload error: {str(e)}', exc_info=True)
+        logger.error('SentinelOne upload error: %s', str(e), exc_info=True)
         return jsonify({'error': str(e)}), 500
+    finally:
+        _release_upload_lock(lock_key)
 
 
 # =============================================================================
@@ -1557,58 +1828,68 @@ def upload_ninjarmm_data():
     data = request.json
     file_id = str(data.get('file_id', '1'))
     devices = data.get('devices', [])
+    client_id = _resolve_client_id(data)
+
+    logger.info('Ninja upload - client_id=%s file_id=%s', client_id or 'NO_CLIENT', file_id)
     
     if not devices:
         return jsonify({'error': 'No devices provided'}), 400
     
+    lock_key = _acquire_upload_lock(client_id, file_id)
+    if client_id and not lock_key:
+        return jsonify({'error': 'Upload already in progress. Please retry.'}), 409
+
     try:
         # Extract names from device objects (keep all devices, no filtering)
         device_names = [dev['name'] if isinstance(dev, dict) else dev for dev in devices]
-        
+
         # Create a DataFrame from devices
-        df = pd.DataFrame({'Device Name': device_names})
-        
+        df = pd.DataFrame({_SOURCE_COLUMN_NAME: device_names})
+
         # Generate unique filename
         unique_id = str(uuid.uuid4())
         filename = f'ninjarmm_devices_{unique_id}.xlsx'
         filepath = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        
+
         # Save to Excel
         df.to_excel(filepath, index=False, engine='openpyxl')
-        
+
         # Verify file was created
         if not os.path.exists(filepath):
-            logger.error(f'File creation failed: {filepath}')
+            logger.error('File creation failed: %s', filepath)
             return jsonify({'error': 'File creation failed'}), 500
-        
-        logger.info(f'Created NinjaRMM file: {filename} ({len(device_names)} devices)')
-        
+
+        logger.info('Created NinjaRMM file: %s (%d devices) client_id=%s', filename, len(device_names), client_id or 'NO_CLIENT')
+
         # Delete old file if it exists in session
         if 'files' in session and file_id in session['files']:
             old_filepath = session['files'][file_id]
             try:
                 if os.path.exists(old_filepath):
                     os.remove(old_filepath)
-                    logger.info(f'Removed old file: {old_filepath}')
+                    logger.info('Removed old file: %s', old_filepath)
             except Exception as e:
-                logger.warning(f'Failed to remove old file {old_filepath}: {e}')
-        
+                logger.warning('Failed to remove old file %s: %s', old_filepath, e)
+            _remove_client_file_ref(client_id, file_id)
+
         # Store filepath in both session and global store for resilience
-        _set_session_file(file_id, filepath, _get_client_id(data))
-        
-        logger.info(f'Session files after upload: {session.get("files", {})}')
-        
+        _set_session_file(file_id, filepath, client_id)
+
+        logger.info('Session files after upload: %s', session.get('files', {}))
+
         return jsonify({
             'success': True,
             'filename': 'NinjaRMM Devices',
             'sheets': ['Sheet1'],
-            'columns': ['Device Name'],
+            'columns': [_SOURCE_COLUMN_NAME],
             'row_count': len(device_names)
         })
-    
+
     except Exception as e:
-        logger.error(f'NinjaRMM upload error: {str(e)}', exc_info=True)
+        logger.error('NinjaRMM upload error: %s', str(e), exc_info=True)
         return jsonify({'error': str(e)}), 500
+    finally:
+        _release_upload_lock(lock_key)
 
 
 @app.route('/clients/unified', methods=['GET'])
@@ -1941,7 +2222,7 @@ def run_ninjarmm_script():
         return jsonify({'error': str(e)}), 500
 
 
-def _save_ad_inventory_to_excel(parsed_data, client, days, clean_client):
+def _save_ad_inventory_to_excel(parsed_data, client, days, clean_client, org_id=None, device_id=None):
     """Process AD inventory JSON data and save to Excel cache."""
     items = parsed_data.get('workstations') or parsed_data.get('computers') or []
     if not isinstance(items, list):
@@ -1968,12 +2249,30 @@ def _save_ad_inventory_to_excel(parsed_data, client, days, clean_client):
         'path': filepath,
         'count': len(names),
         'received_at': int(time.time()),
+        'client': clean_client or client,
+        'days': days,
+        'org_id': org_id,
+        'device_id': device_id,
     }
-    _AD_CACHE[(client, days)] = entry
-    if clean_client and clean_client != client:
-        _AD_CACHE[(clean_client, days)] = entry
-    
-    return len(names)
+    _store_ad_cache_entry(entry, client, clean_client, days, org_id=org_id, device_id=device_id)
+
+    return entry
+
+def _build_ad_attach_payload(entry, file_id='3'):
+    return {
+        'file_id': str(file_id),
+        'filename': 'Active Directory',
+        'sheets': ['Sheet1'],
+        'columns': ['Computer Name'],
+        'count': entry.get('count', 0),
+        'row_count': entry.get('count', 0),
+    }
+
+def _attach_ad_entry(entry, file_id, client_id):
+    _set_session_file(file_id, entry['path'], client_id)
+    payload = _build_ad_attach_payload(entry, file_id=file_id)
+    payload['attached'] = True
+    return payload
 
 
 @app.route('/ad/trigger', methods=['POST'])
@@ -1992,6 +2291,9 @@ def trigger_ad_inventory():
     org_id = data.get('org_id')
     device_id = data.get('device_id')
     script_id = data.get('script_id')
+    file_id = str(data.get('file_id', '3'))
+    auto_attach = data.get('auto_attach', True) is True
+    client_id = _resolve_client_id(data)
 
     if not client:
         return jsonify({'error': 'client is required'}), 400
@@ -2026,7 +2328,15 @@ def trigger_ad_inventory():
 
     if client != clean_client:
         logger.info('Client name sanitized: "%s" -> "%s"', client, clean_client)
-    logger.info('Triggering AD inventory via Ninja: client=%s days=%s org_id=%s device_id=%s script_id=%s', clean_client, days, org_id, device_id, script_id)
+    logger.info(
+        'Triggering AD inventory via Ninja: client=%s days=%s org_id=%s device_id=%s script_id=%s client_id=%s',
+        clean_client,
+        days,
+        org_id,
+        device_id,
+        script_id,
+        client_id or 'NO_CLIENT',
+    )
 
     try:
         # Get authentication headers
@@ -2066,14 +2376,24 @@ def trigger_ad_inventory():
                             
                             if age_seconds < 600 and parsed_days == days:
                                 logger.info('Reusing existing AD inventory data from device (age: %ds)', int(age_seconds))
-                                count = _save_ad_inventory_to_excel(parsed, client, days, clean_client)
-                                if count is not None:
-                                    return jsonify({
-                                        'success': True, 
-                                        'message': f'Reused recent AD inventory from Ninja device field', 
-                                        'count': count,
-                                        'cached': True
-                                    })
+                                entry = _save_ad_inventory_to_excel(
+                                    parsed,
+                                    client,
+                                    days,
+                                    clean_client,
+                                    org_id=org_id,
+                                    device_id=device_id,
+                                )
+                                if entry is not None:
+                                    payload = {
+                                        'success': True,
+                                        'message': 'Reused recent AD inventory from Ninja device field',
+                                        'count': entry.get('count', 0),
+                                        'cached': True,
+                                    }
+                                    if auto_attach:
+                                        payload.update(_attach_ad_entry(entry, file_id, client_id))
+                                    return jsonify(payload)
                 except Exception as e:
                     logger.debug('Cache check (device) failed: %s', str(e))
         except Exception as e:
@@ -2210,7 +2530,12 @@ def trigger_ad_inventory():
                 last_seen = value
 
                 if '...TRUNCATED...' in value:
-                    return jsonify({'error': f"AD payload in Ninja custom field '{_AD_CUSTOM_FIELD_NAME}' was truncated."}), 500
+                    return jsonify({
+                        'error': (
+                            f"AD payload in Ninja custom field '{_AD_CUSTOM_FIELD_NAME}' was truncated. "
+                            "Reduce the days scope, split the query, or use /ad/intake to post the payload."
+                        )
+                    }), 500
 
                 parsed = _extract_and_validate_ad_data(value)
                 if not parsed:
@@ -2255,11 +2580,29 @@ def trigger_ad_inventory():
                 # Accept data if: (runId matches) OR (recent timestamp AND days match)
                 # This handles both cases: parameters passed correctly, or fallback to timestamp+days validation
                 if runid_match or (is_recent and days_match):
-                    count = _save_ad_inventory_to_excel(parsed, client, days, clean_client)
-                    if count is not None:
+                    entry = _save_ad_inventory_to_excel(
+                        parsed,
+                        client,
+                        days,
+                        clean_client,
+                        org_id=org_id,
+                        device_id=device_id,
+                    )
+                    if entry is not None:
                         validation_method = 'runId' if runid_match else 'timestamp+days'
-                        logger.info(f"AD inventory received after {poll_attempt} poll attempts (validated by {validation_method})")
-                        return jsonify({'success': True, 'message': 'AD inventory received', 'count': count})
+                        logger.info(
+                            "AD inventory received after %s poll attempts (validated by %s)",
+                            poll_attempt,
+                            validation_method,
+                        )
+                        payload = {
+                            'success': True,
+                            'message': 'AD inventory received',
+                            'count': entry.get('count', 0),
+                        }
+                        if auto_attach:
+                            payload.update(_attach_ad_entry(entry, file_id, client_id))
+                        return jsonify(payload)
                 else:
                     logger.debug('Polling: data validation failed (runId=%s, recent=%s, days_match=%s)', runid_match, is_recent, days_match)
                     continue
@@ -2403,23 +2746,33 @@ def ad_intake():
 
     names = [n for n in names if n]
 
-    # Save as a virtual Excel file to reuse existing compare flow
-    uploads_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
-    filename = f'ad_computers_{uuid.uuid4().hex}.xlsx'
-    filepath = os.path.join(uploads_root, filename)
+    clean_client = _sanitize_client_name(client)
+    org_id = payload.get('org_id') or payload.get('orgId')
+    device_id = payload.get('device_id') or payload.get('deviceId')
+    parsed_data = {'workstations': names}
+    entry = _save_ad_inventory_to_excel(
+        parsed_data,
+        client,
+        days,
+        clean_client,
+        org_id=org_id,
+        device_id=device_id,
+    )
 
-    df = pd.DataFrame({'Computer Name': names})
-    df.to_excel(filepath, index=False, engine='openpyxl')
+    logger.info(
+        'Received AD inventory: client=%s days=%s count=%s org_id=%s device_id=%s from=%s',
+        clean_client,
+        days,
+        entry.get('count', 0) if entry else 0,
+        org_id,
+        device_id,
+        request.remote_addr,
+    )
 
-    _AD_CACHE[(client, days)] = {
-        'path': filepath,
-        'count': len(names),
-        'received_at': int(time.time()),
-    }
+    if not entry:
+        return jsonify({'error': 'Failed to store AD inventory'}), 500
 
-    logger.info('Received AD inventory: client=%s days=%s count=%s from=%s', client, days, len(names), request.remote_addr)
-
-    return jsonify({'success': True, 'client': client, 'days': days, 'count': len(names)})
+    return jsonify({'success': True, 'client': clean_client, 'days': days, 'count': entry.get('count', 0)})
 
 
 @app.route('/ad/sync', methods=['POST'])
@@ -2429,11 +2782,14 @@ def sync_ad_inventory():
     if csrf_err:
         return csrf_err
 
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     client = data.get('client')
     org_id = data.get('org_id')
     device_id = data.get('device_id')
     days = int(data.get('days') or 30)
+    file_id = str(data.get('file_id', '3'))
+    auto_attach = data.get('auto_attach', True) is True
+    client_id = _resolve_client_id(data)
 
     if not client or not org_id or not device_id:
         return jsonify({'error': 'Missing client, org_id, or device_id'}), 400
@@ -2446,7 +2802,14 @@ def sync_ad_inventory():
 
     clean_client = _sanitize_client_name(client)
     api_url = _get_ninja_api_url()
-    logger.info('Syncing AD inventory: client=%s org_id=%s device_id=%s field=%s', clean_client, org_id, device_id, _AD_CUSTOM_FIELD_NAME)
+    logger.info(
+        'Syncing AD inventory: client=%s org_id=%s device_id=%s field=%s client_id=%s',
+        clean_client,
+        org_id,
+        device_id,
+        _AD_CUSTOM_FIELD_NAME,
+        client_id or 'NO_CLIENT',
+    )
 
     try:
         headers, auth = _get_ninja_auth(api_url)
@@ -2464,15 +2827,25 @@ def sync_ad_inventory():
             logger.info('Parsed AD data from device: found %d computers. Keys: %s', comp_count, list(latest_parsed.keys()))
 
         if latest_parsed:
-            count = _save_ad_inventory_to_excel(latest_parsed, client, days, clean_client)
-            if count is not None:
+            entry = _save_ad_inventory_to_excel(
+                latest_parsed,
+                client,
+                days,
+                clean_client,
+                org_id=org_id,
+                device_id=device_id,
+            )
+            if entry is not None:
                 gen_str = latest_parsed.get('generatedAtUtc', 'unknown time')
-                return jsonify({
+                payload = {
                     'success': True,
                     'message': f'Synced AD inventory from Ninja (Generated at: {gen_str})',
-                    'count': count,
-                    'cached': True
-                })
+                    'count': entry.get('count', 0),
+                    'cached': True,
+                }
+                if auto_attach:
+                    payload.update(_attach_ad_entry(entry, file_id, client_id))
+                return jsonify(payload)
         
         return jsonify({'error': 'No AD inventory data found in custom fields for this organization or device.'}), 404
 
@@ -2586,18 +2959,22 @@ def ad_status():
         days = int(request.args.get('days') or 30)
     except Exception:
         days = 30
+    org_id = request.args.get('org_id')
+    device_id = request.args.get('device_id')
 
-    entry = _AD_CACHE.get((client, days)) if client else None
+    entry = _lookup_ad_cache_entry(client, days, org_id=org_id, device_id=device_id)
     if not entry:
         return jsonify({'success': True, 'available': False})
 
     return jsonify({
         'success': True,
         'available': True,
-        'client': client,
+        'client': entry.get('client') or client,
         'days': days,
         'count': entry.get('count', 0),
-        'received_at': entry.get('received_at')
+        'received_at': entry.get('received_at'),
+        'org_id': entry.get('org_id'),
+        'device_id': entry.get('device_id'),
     })
 
 
@@ -2615,6 +2992,9 @@ def ad_attach():
     client = (data.get('client') or '').strip()
     days = data.get('days')
     file_id = str(data.get('file_id', '3'))
+    org_id = data.get('org_id')
+    device_id = data.get('device_id')
+    client_id = _resolve_client_id(data)
 
     if not client:
         return jsonify({'error': 'client is required'}), 400
@@ -2624,24 +3004,50 @@ def ad_attach():
     except Exception:
         return jsonify({'error': 'days must be an integer'}), 400
 
-    entry = _AD_CACHE.get((client, days))
+    entry = _lookup_ad_cache_entry(client, days, org_id=org_id, device_id=device_id)
     if not entry:
         return jsonify({'error': 'AD snapshot not available yet'}), 404
 
-    logger.info(f'AD attach - session files BEFORE: {session.get("files", {})}')
+    logger.info(
+        'AD attach - session files BEFORE: %s client_id=%s',
+        session.get('files', {}),
+        client_id or 'NO_CLIENT',
+    )
 
-    # Store filepath in both session and global store for resilience
-    _set_session_file(file_id, entry['path'], _get_client_id(data))
-    
-    logger.info(f'AD attach - session files AFTER: {session.get("files", {})}')
+    payload = _attach_ad_entry(entry, file_id, client_id)
+    logger.info(
+        'AD attach - session files AFTER: %s client_id=%s',
+        session.get('files', {}),
+        client_id or 'NO_CLIENT',
+    )
+
+    payload['success'] = True
+    return jsonify(payload)
+
+
+@app.route('/debug/session', methods=['POST'])
+def debug_session_state():
+    """Inspect session and global store files for a client (debug only)."""
+    if os.getenv('ENABLE_DEBUG_ENDPOINTS', '0') not in ('1', 'true', 'True'):
+        return jsonify({'error': 'Not found'}), 404
+
+    csrf_err = _require_csrf()
+    if csrf_err:
+        return csrf_err
+
+    data = request.get_json(silent=True) or {}
+    client_id = _resolve_client_id(data) or data.get('client_id')
+
+    files, _ = _get_session_files_with_prune(client_id)
+    store = _CLIENT_FILE_STORE.get(client_id, {})
 
     return jsonify({
         'success': True,
-        'filename': 'Active Directory',
-        'sheets': ['Sheet1'],
-        'columns': ['Computer Name'],
-        'count': entry.get('count', 0),
-        'row_count': entry.get('count', 0)
+        'client_id': client_id,
+        'session_files': _describe_files_map(session.get('files', {})),
+        'merged_files': _describe_files_map(files),
+        'store_files': _describe_files_map(store.get('files', {})),
+        'store_last_access': store.get('last_access'),
     })
 
 
@@ -2668,15 +3074,15 @@ def cleanup():
     # if csrf_ok and 'files' in session:
     #     session.pop('files', None)
 
-    # 2) Prune old/orphan uploads (age-based)
-    try:
-        retention_hours = int(os.getenv('UPLOAD_RETENTION_HOURS', '24'))
-    except Exception:
-        retention_hours = 24
-
-    retention_seconds = max(0, retention_hours) * 3600
+    retention_seconds = _get_upload_retention_seconds()
     now = time.time()
 
+    # Heal/prune session/global references before deleting files
+    client_id = _resolve_client_id()
+    _get_session_files_with_prune(client_id)
+
+    # 2) Prune old/orphan uploads (age-based)
+    referenced_paths = _collect_referenced_paths()
     try:
         for name in os.listdir(uploads_root):
             path = os.path.abspath(os.path.join(uploads_root, name))
@@ -2687,26 +3093,34 @@ def cleanup():
 
             try:
                 age_seconds = now - os.path.getmtime(path)
-                if age_seconds >= retention_seconds:
+                if age_seconds >= retention_seconds and path not in referenced_paths:
                     os.remove(path)
             except Exception:
                 pass
     except Exception:
         pass
 
-    # 3) Prune global _CLIENT_FILE_STORE (age-based)
+    # 3) Prune global _CLIENT_FILE_STORE (age-based) and missing file references
     try:
         current_store_keys = list(_CLIENT_FILE_STORE.keys())
         for cid in current_store_keys:
             if cid in _CLIENT_FILE_STORE:
+                store_files = dict(_CLIENT_FILE_STORE[cid].get('files', {}))
+                store_files, removed = _prune_missing_file_refs(store_files, client_id=cid, update_store=True)
+                if removed:
+                    logger.info('Pruned %d missing file refs from client %s store', len(removed), cid)
                 age = now - _CLIENT_FILE_STORE[cid].get('last_access', 0)
-                if age >= retention_seconds:
+                if age >= _get_client_store_retention_seconds():
                     del _CLIENT_FILE_STORE[cid]
-                    logger.info(f'Pruned client {cid} from global store (age: {int(age/3600)}h)')
+                    logger.info('Pruned client %s from global store (age: %dh)', cid, int(age / 3600))
     except Exception as e:
-        logger.warning(f'Global store pruning failed: {e}')
+        logger.warning('Global store pruning failed: %s', e)
 
-    return jsonify({'success': True, 'retention_hours': retention_hours})
+    return jsonify({
+        'success': True,
+        'retention_seconds': retention_seconds,
+        'retention_hours': int(retention_seconds / 3600),
+    })
 
 
 if __name__ == '__main__':
