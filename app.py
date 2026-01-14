@@ -821,10 +821,15 @@ def compare_columns():
     file2_sheet = data.get('file2_sheet')
     file2_column = data.get('file2_column')
 
+    logger.info(f'Compare request: file1_id={file1_id}, file2_id={file2_id}, file3_id={file3_id}')
+    logger.info(f'Session files available: {list(session.get("files", {}).keys())}')
+
     if 'files' not in session:
+        logger.error('No files in session')
         return jsonify({'error': 'Files not found. Please upload again.'}), 400
 
     if file1_id not in session['files'] or file2_id not in session['files']:
+        logger.error(f'Missing files in session. Requested: {file1_id}, {file2_id}. Available: {list(session["files"].keys())}')
         return jsonify({'error': 'Both files must be uploaded.'}), 400
 
     try:
@@ -1144,11 +1149,20 @@ def upload_sentinelone_data():
         # Save to Excel
         df.to_excel(filepath, index=False, engine='openpyxl')
         
+        # Verify file was created
+        if not os.path.exists(filepath):
+            logger.error(f'File creation failed: {filepath}')
+            return jsonify({'error': 'File creation failed'}), 500
+        
+        logger.info(f'Created SentinelOne file: {filename} ({len(endpoint_names)} endpoints)')
+        
         # Store filepath in session
         if 'files' not in session:
             session['files'] = {}
         session['files'][file_id] = filepath
         session.modified = True
+        
+        logger.info(f'Session files after upload: {session.get("files", {})}')
         
         return jsonify({
             'success': True,
@@ -1159,6 +1173,7 @@ def upload_sentinelone_data():
         })
     
     except Exception as e:
+        logger.error(f'SentinelOne upload error: {str(e)}', exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
@@ -1460,11 +1475,20 @@ def upload_ninjarmm_data():
         # Save to Excel
         df.to_excel(filepath, index=False, engine='openpyxl')
         
+        # Verify file was created
+        if not os.path.exists(filepath):
+            logger.error(f'File creation failed: {filepath}')
+            return jsonify({'error': 'File creation failed'}), 500
+        
+        logger.info(f'Created NinjaRMM file: {filename} ({len(device_names)} devices)')
+        
         # Store filepath in session
         if 'files' not in session:
             session['files'] = {}
         session['files'][file_id] = filepath
         session.modified = True
+        
+        logger.info(f'Session files after upload: {session.get("files", {})}')
         
         return jsonify({
             'success': True,
@@ -1475,6 +1499,7 @@ def upload_ninjarmm_data():
         })
     
     except Exception as e:
+        logger.error(f'NinjaRMM upload error: {str(e)}', exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
