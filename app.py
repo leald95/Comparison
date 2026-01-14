@@ -1158,6 +1158,16 @@ def upload_sentinelone_data():
         
         logger.info(f'Created SentinelOne file: {filename} ({len(endpoint_names)} endpoints)')
         
+        # Delete old file if it exists in session
+        if 'files' in session and file_id in session['files']:
+            old_filepath = session['files'][file_id]
+            try:
+                if os.path.exists(old_filepath):
+                    os.remove(old_filepath)
+                    logger.info(f'Removed old file: {old_filepath}')
+            except Exception as e:
+                logger.warning(f'Failed to remove old file {old_filepath}: {e}')
+        
         # Store filepath in session
         if 'files' not in session:
             session['files'] = {}
@@ -1483,6 +1493,16 @@ def upload_ninjarmm_data():
             return jsonify({'error': 'File creation failed'}), 500
         
         logger.info(f'Created NinjaRMM file: {filename} ({len(device_names)} devices)')
+        
+        # Delete old file if it exists in session
+        if 'files' in session and file_id in session['files']:
+            old_filepath = session['files'][file_id]
+            try:
+                if os.path.exists(old_filepath):
+                    os.remove(old_filepath)
+                    logger.info(f'Removed old file: {old_filepath}')
+            except Exception as e:
+                logger.warning(f'Failed to remove old file {old_filepath}: {e}')
         
         # Store filepath in session
         if 'files' not in session:
