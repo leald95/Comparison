@@ -810,16 +810,21 @@ def read_excel_file(filepath):
 @app.route('/')
 def index():
     """Render the main page."""
-    # Force completely fresh session to prevent stale data issues
+    # Clear only files from session, keep session for CSRF token persistence
     old_files = session.get('files', {})
     if old_files:
-        logger.info(f'Clearing session and forcing fresh start: {list(old_files.keys())}')
+        logger.info(f'Clearing stale session files: {list(old_files.keys())}')
+        session.pop('files', None)
+        session.modified = True
     
-    # Clear session and delete the cookie to force fresh start
-    session.clear()
-    resp = make_response(render_template('index.html', csrf_token=uuid.uuid4().hex))
-    resp.delete_cookie('session')
-    return resp
+    # Generate CSRF token and ensure it's in session
+    csrf_token = session.get('csrf_token')
+    if not csrf_token:
+        csrf_token = uuid.uuid4().hex
+        session['csrf_token'] = csrf_token
+        session.modified = True
+    
+    return render_template('index.html', csrf_token=csrf_token)
 
 
 @app.route('/favicon.ico')
