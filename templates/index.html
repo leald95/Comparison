@@ -5303,15 +5303,23 @@
             const btn2 = document.getElementById('refresh-data-2');
             const text1 = document.getElementById('refresh-text-1');
             const text2 = document.getElementById('refresh-text-2');
-            const canRefresh1 = state.file1.sourceType === 'SentinelOne' || state.file1.sourceType === 'NinjaRMM';
-            const canRefresh2 = state.file2.sourceType === 'SentinelOne' || state.file2.sourceType === 'NinjaRMM';
+            const canRefresh1 = (state.file1.sourceType === 'SentinelOne' || state.file1.sourceType === 'NinjaRMM')
+                && !!(state.file1.sourceConfig && state.file1.sourceConfig.id);
+            const canRefresh2 = (state.file2.sourceType === 'SentinelOne' || state.file2.sourceType === 'NinjaRMM')
+                && !!(state.file2.sourceConfig && state.file2.sourceConfig.id);
 
             if (dataSourcesInfo) {
                 if (canRefresh1 || canRefresh2) {
                     dataSourcesInfo.style.display = 'flex';
 
-                    if (btn1) btn1.style.display = canRefresh1 ? 'inline-flex' : 'none';
-                    if (btn2) btn2.style.display = canRefresh2 ? 'inline-flex' : 'none';
+                    if (btn1) {
+                        btn1.style.display = canRefresh1 ? 'inline-flex' : 'none';
+                        btn1.disabled = !canRefresh1;
+                    }
+                    if (btn2) {
+                        btn2.style.display = canRefresh2 ? 'inline-flex' : 'none';
+                        btn2.disabled = !canRefresh2;
+                    }
 
                     const sourceIcon1 = displayName1 === 'SentinelOne' ? '🛡️' : displayName1 === 'NinjaRMM' ? '🥷' : '📄';
                     const sourceMeta1 = `${data.stats.unique_file1} ${displayName1 === 'SentinelOne' ? 'endpoints' : 'devices'}`;
