@@ -276,7 +276,7 @@ def _normalize_session_files_keys():
     
     # Log session info for debugging
     session_id = request.cookies.get('session', 'NO_COOKIE')[:20] if request.cookies.get('session') else 'NO_COOKIE'
-    logger.debug(f'Request {request.path} - Session ID: {session_id} - Files in session: {list(session.get("files", {}).keys())}')
+    logger.info(f'Request {request.path} - Session ID: {session_id} - Files in session: {list(session.get("files", {}).keys())}')
 
     files = session.get('files')
     if isinstance(files, dict):
@@ -1481,6 +1481,11 @@ def upload_ninjarmm_data():
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err
+
+    # Log session cookie details for debugging
+    session_cookie = request.cookies.get('session', 'NO_COOKIE')
+    logger.info(f'Ninja upload - Session cookie: {session_cookie[:20] if session_cookie != "NO_COOKIE" else "NO_COOKIE"}')
+    logger.info(f'Ninja upload - Session files before: {list(session.get("files", {}).keys())}')
 
     data = request.json
     file_id = str(data.get('file_id', '1'))
