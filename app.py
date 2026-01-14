@@ -1144,7 +1144,7 @@ def upload_sentinelone_data():
         # Generate unique filename
         unique_id = str(uuid.uuid4())
         filename = f'sentinelone_endpoints_{unique_id}.xlsx'
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        filepath = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         
         # Save to Excel
         df.to_excel(filepath, index=False, engine='openpyxl')
@@ -1470,7 +1470,7 @@ def upload_ninjarmm_data():
         # Generate unique filename
         unique_id = str(uuid.uuid4())
         filename = f'ninjarmm_devices_{unique_id}.xlsx'
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        filepath = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         
         # Save to Excel
         df.to_excel(filepath, index=False, engine='openpyxl')
