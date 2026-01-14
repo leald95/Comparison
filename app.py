@@ -56,7 +56,53 @@ def _load_ninja_token_cache():
 
 # Initial load
 _load_ninja_token_cache()
+# Global store for file paths, keyed by frontend clientId.
+# This acts as a backup to the Flask session, which can be unstable in some environments.
+_CLIENT_FILE_STORE = {}
 
+def _get_client_id(data=None):
+    """Extract client_id from request JSON or fallback to session."""
+    if not data:
+        data = request.get_json(silent=True) or {}
+    return data.get('client_id')
+
+def _set_session_file(file_id, filepath, client_id=None):
+    """Store filepath in both session and global store."""
+    file_id = str(file_id)
+    if 'files' not in session:
+        session['files'] = {}
+    session['files'][file_id] = filepath
+    session.modified = True
+    
+    if client_id:
+        if client_id not in _CLIENT_FILE_STORE:
+            _CLIENT_FILE_STORE[client_id] = {'files': {}, 'last_access': time.time()}
+        _CLIENT_FILE_STORE[client_id]['files'][file_id] = filepath
+        _CLIENT_FILE_STORE[client_id]['last_access'] = time.time()
+        logger.info(f'Stored file {file_id} in global store for client {client_id}')
+
+def _get_session_files(client_id=None):
+    """Get files from session, falling back to global store if missing."""
+    files = session.get('files', {})
+
+    if client_id and client_id in _CLIENT_FILE_STORE:
+        store_files = _CLIENT_FILE_STORE[client_id].get('files', {})
+        if store_files:
+            _CLIENT_FILE_STORE[client_id]['last_access'] = time.time()
+            if not files:
+                files = dict(store_files)
+                session['files'] = files
+                session.modified = True
+                logger.info(f'Healed session for client {client_id} from global store')
+            elif isinstance(files, dict):
+                merged = {**store_files, **files}
+                if merged != files:
+                    session['files'] = merged
+                    session.modified = True
+                    files = merged
+                    logger.info(f'Merged session files for client {client_id} from global store')
+
+    return files
 
 
 # In-process cache for Active Directory device snapshots received from Ninja
@@ -242,11 +288,12 @@ app = Flask(__name__)
 # NOTE: In production, always set FLASK_SECRET_KEY in your .env file.
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY') or 'comparison-tool-stable-dev-key-8b92'
 
-# Session configuration - temporarily disable persistence to fix stale data
-app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour (shorter for testing)
+# Session configuration - optimized for local HTTP development
+app.config['PERMANENT_SESSION_LIFETIME'] = 7200  # 2 hours
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = os.getenv('SESSION_COOKIE_SAMESITE', 'None')
-app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', '0') in ('1', 'true', 'True')
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = False
+app.config['SESSION_REFRESH_EACH_REQUEST'] = True
 app.config['SESSION_COOKIE_DOMAIN'] = None
 
 
@@ -286,9 +333,13 @@ def _normalize_session_files_keys():
         logger.info(f'New session created for {request.path}')
         session['session_created'] = True
 
-    files = session.get('files')
+    # Use the diagnostic client_id if available to heal session
+    client_id = request.get_json(silent=True).get('client_id') if request.is_json else None
+    files = _get_session_files(client_id)
+    
     if isinstance(files, dict):
         session['files'] = {str(k): v for k, v in files.items()}
+        session.modified = True
 
 
 @app.after_request
@@ -810,12 +861,8 @@ def read_excel_file(filepath):
 @app.route('/')
 def index():
     """Render the main page."""
-    # Clear only files from session, keep session for CSRF token persistence
-    old_files = session.get('files', {})
-    if old_files:
-        logger.info(f'Clearing stale session files: {list(old_files.keys())}')
-        session.pop('files', None)
-        session.modified = True
+    # Note: Session files are NOT cleared on page load to preserve ongoing work
+    # Files are naturally cleaned up by age-based pruning in /cleanup
     
     # Generate CSRF token and ensure it's in session
     csrf_token = session.get('csrf_token')
@@ -850,21 +897,23 @@ def compare_columns():
     file2_sheet = data.get('file2_sheet')
     file2_column = data.get('file2_column')
 
-    logger.info(f'Compare request: file1_id={file1_id}, file2_id={file2_id}, file3_id={file3_id}')
-    logger.info(f'Session files available: {list(session.get("files", {}).keys())}')
-    logger.info(f'Session file paths: {session.get("files", {})}')
+    client_id = _get_client_id(data)
+    files = _get_session_files(client_id)
 
-    if 'files' not in session:
-        logger.error('No files in session')
+    logger.info(f'Compare request: file1_id={file1_id}, file2_id={file2_id}, file3_id={file3_id}, client_id={client_id}')
+    logger.info(f'Files available: {list(files.keys())}')
+
+    if not files:
+        logger.error(f'No files found for client {client_id} (Session: {list(session.get("files", {}).keys())})')
         return jsonify({'error': 'Files not found. Please upload again.'}), 400
 
-    if file1_id not in session['files'] or file2_id not in session['files']:
-        logger.error(f'Missing files in session. Requested: {file1_id}, {file2_id}. Available: {list(session["files"].keys())}')
+    if file1_id not in files or file2_id not in files:
+        logger.error(f'Missing files. Requested: {file1_id}, {file2_id}. Available: {list(files.keys())}')
         return jsonify({'error': 'Both files must be uploaded.'}), 400
 
     # Log the actual paths being used
-    file1_path = session['files'][file1_id]
-    file2_path = session['files'][file2_id]
+    file1_path = files[file1_id]
+    file2_path = files[file2_id]
     logger.info(f'Reading file1 from: {file1_path}')
     logger.info(f'Reading file2 from: {file2_path}')
     logger.info(f'File1 exists: {os.path.exists(file1_path)}')
@@ -873,13 +922,13 @@ def compare_columns():
     try:
         # Read files
         df1 = pd.read_excel(file1_path, sheet_name=file1_sheet)
-        df2 = pd.read_excel(session['files'][file2_id], sheet_name=file2_sheet)
+        df2 = pd.read_excel(file2_path, sheet_name=file2_sheet)
         
         # Load AD data if provided
         set3_norm = set()
-        if file3_id and file3_id in session['files']:
+        if file3_id and file3_id in files:
             try:
-                df3 = pd.read_excel(session['files'][file3_id]) # AD files are always flat-ish
+                df3 = pd.read_excel(files[file3_id]) # AD files are always flat-ish
                 # AD schema uses 'Name' column from _save_ad_inventory_to_excel
                 col3_name = 'Name' if 'Name' in df3.columns else df3.columns[0]
                 col3_data = df3[col3_name].dropna().astype(str).tolist()
@@ -1206,11 +1255,8 @@ def upload_sentinelone_data():
             except Exception as e:
                 logger.warning(f'Failed to remove old file {old_filepath}: {e}')
         
-        # Store filepath in session
-        if 'files' not in session:
-            session['files'] = {}
-        session['files'][file_id] = filepath
-        session.modified = True
+        # Store filepath in both session and global store for resilience
+        _set_session_file(file_id, filepath, _get_client_id(data))
         
         logger.info(f'Session files after upload: {session.get("files", {})}')
         
@@ -1547,11 +1593,8 @@ def upload_ninjarmm_data():
             except Exception as e:
                 logger.warning(f'Failed to remove old file {old_filepath}: {e}')
         
-        # Store filepath in session
-        if 'files' not in session:
-            session['files'] = {}
-        session['files'][file_id] = filepath
-        session.modified = True
+        # Store filepath in both session and global store for resilience
+        _set_session_file(file_id, filepath, _get_client_id(data))
         
         logger.info(f'Session files after upload: {session.get("files", {})}')
         
@@ -2587,12 +2630,9 @@ def ad_attach():
 
     logger.info(f'AD attach - session files BEFORE: {session.get("files", {})}')
 
-    if 'files' not in session:
-        session['files'] = {}
-
-    session['files'][file_id] = entry['path']
-    session.modified = True
-
+    # Store filepath in both session and global store for resilience
+    _set_session_file(file_id, entry['path'], _get_client_id(data))
+    
     logger.info(f'AD attach - session files AFTER: {session.get("files", {})}')
 
     return jsonify({
@@ -2620,16 +2660,13 @@ def cleanup():
 
     uploads_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
 
-    # 1) Remove session-tracked files (only when CSRF token is valid)
-    if csrf_ok and 'files' in session:
-        for file_id, filepath in session['files'].items():
-            try:
-                abs_path = os.path.abspath(filepath)
-                if abs_path.startswith(uploads_root) and os.path.exists(abs_path):
-                    os.remove(abs_path)
-            except Exception:
-                pass
-        session.pop('files', None)
+    # 1) Clear session file references (but don't delete files immediately)
+    # Files will be cleaned up by age-based pruning below
+    # This prevents premature deletion when browsers trigger pagehide unexpectedly
+    # Note: We no longer clear session files here to prevent premature loss of references
+    # during transient browser events like pagehide. Disk cleanup still occurs below.
+    # if csrf_ok and 'files' in session:
+    #     session.pop('files', None)
 
     # 2) Prune old/orphan uploads (age-based)
     try:
@@ -2656,6 +2693,18 @@ def cleanup():
                 pass
     except Exception:
         pass
+
+    # 3) Prune global _CLIENT_FILE_STORE (age-based)
+    try:
+        current_store_keys = list(_CLIENT_FILE_STORE.keys())
+        for cid in current_store_keys:
+            if cid in _CLIENT_FILE_STORE:
+                age = now - _CLIENT_FILE_STORE[cid].get('last_access', 0)
+                if age >= retention_seconds:
+                    del _CLIENT_FILE_STORE[cid]
+                    logger.info(f'Pruned client {cid} from global store (age: {int(age/3600)}h)')
+    except Exception as e:
+        logger.warning(f'Global store pruning failed: {e}')
 
     return jsonify({'success': True, 'retention_hours': retention_hours})
 

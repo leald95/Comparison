@@ -2185,19 +2185,20 @@
 
     <div class="container">
         <header>
-            <div class="logo" style="cursor: pointer;" onclick="returnToClientSelection()" title="Return to Client Selection">
+            <div class="logo" style="cursor: pointer;" onclick="returnToClientSelection()"
+                title="Return to Client Selection">
                 <div class="logo-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="32" height="32">
-                        <path d="M 18 28 L 22 36 L 14 36 Z" fill="currentColor"/>
-                        <path d="M 46 28 L 50 36 L 42 36 Z" fill="currentColor"/>
-                        <rect x="30.5" y="20" width="3" height="20" fill="currentColor" rx="1.5"/>
-                        <rect x="26" y="39" width="12" height="3" fill="currentColor" rx="1.5"/>
-                        <line x1="18" y1="28" x2="18" y2="24" stroke="currentColor" stroke-width="1.5"/>
-                        <line x1="18" y1="24" x2="28" y2="24" stroke="currentColor" stroke-width="1.5"/>
-                        <line x1="46" y1="28" x2="46" y2="24" stroke="currentColor" stroke-width="1.5"/>
-                        <line x1="46" y1="24" x2="36" y2="24" stroke="currentColor" stroke-width="1.5"/>
-                        <rect x="16" y="22.5" width="32" height="3" fill="currentColor" rx="1.5"/>
-                        <circle cx="32" cy="24" r="2.5" fill="currentColor"/>
+                        <path d="M 18 28 L 22 36 L 14 36 Z" fill="currentColor" />
+                        <path d="M 46 28 L 50 36 L 42 36 Z" fill="currentColor" />
+                        <rect x="30.5" y="20" width="3" height="20" fill="currentColor" rx="1.5" />
+                        <rect x="26" y="39" width="12" height="3" fill="currentColor" rx="1.5" />
+                        <line x1="18" y1="28" x2="18" y2="24" stroke="currentColor" stroke-width="1.5" />
+                        <line x1="18" y1="24" x2="28" y2="24" stroke="currentColor" stroke-width="1.5" />
+                        <line x1="46" y1="28" x2="46" y2="24" stroke="currentColor" stroke-width="1.5" />
+                        <line x1="46" y1="24" x2="36" y2="24" stroke="currentColor" stroke-width="1.5" />
+                        <rect x="16" y="22.5" width="32" height="3" fill="currentColor" rx="1.5" />
+                        <circle cx="32" cy="24" r="2.5" fill="currentColor" />
                     </svg>
                 </div>
                 <h1>Endpoint Comparison Tool</h1>
@@ -2249,18 +2250,23 @@
                 <div style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.9rem;">
                     AD inventory: <span id="ad-status-text-results">Not fetched</span>
                 </div>
-                
+
                 <!-- AD Fetch Progress Indicator (Results Page) -->
-                <div id="ad-fetch-progress-results" style="display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 10px; max-width: 500px; margin-left: auto; margin-right: auto;">
+                <div id="ad-fetch-progress-results"
+                    style="display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 10px; max-width: 500px; margin-left: auto; margin-right: auto;">
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <div class="spinner" style="width: 20px; height: 20px; border-width: 3px;"></div>
                         <div>
-                            <div id="ad-progress-message-results" style="color: var(--text-primary); font-weight: 600; margin-bottom: 0.25rem;">Triggering AD inventory script...</div>
-                            <div id="ad-progress-details-results" style="font-size: 0.85rem; color: var(--text-secondary);">Please wait while we collect Active Directory data</div>
+                            <div id="ad-progress-message-results"
+                                style="color: var(--text-primary); font-weight: 600; margin-bottom: 0.25rem;">Triggering
+                                AD inventory script...</div>
+                            <div id="ad-progress-details-results"
+                                style="font-size: 0.85rem; color: var(--text-secondary);">Please wait while we collect
+                                Active Directory data</div>
                         </div>
                     </div>
                 </div>
-                
+
                 <button type="button" class="history-btn" id="fetch-ad-btn-results">🧩 Fetch AD</button>
                 <button type="button" class="history-btn" id="sync-ad-btn-results"
                     title="Sync latest data already in Ninja custom fields">📥 Sync Current AD</button>
@@ -2423,9 +2429,10 @@
                             <span class="status-text">Comparison complete!</span>
                         </div>
                     </div>
-                    
+
                     <!-- Proceed to Compare Button -->
-                    <div id="proceed-compare-container" style="display: none; text-align: center; margin-top: 2.5rem; margin-bottom: 2rem;">
+                    <div id="proceed-compare-container"
+                        style="display: none; text-align: center; margin-top: 2.5rem; margin-bottom: 2rem;">
                         <button type="button" class="select-client-main-btn" id="proceed-compare-btn">
                             <span class="btn-text">⚡ Proceed to Compare</span>
                         </button>
@@ -2454,8 +2461,9 @@
                             <div class="source-summary-count" id="ad-count">Not fetched</div>
                         </div>
                     </div>
-                    
-                    <div style="text-align: center; margin-top: 1rem; color: var(--text-secondary); font-size: 0.9rem;" id="source-selection-hint">
+
+                    <div style="text-align: center; margin-top: 1rem; color: var(--text-secondary); font-size: 0.9rem;"
+                        id="source-selection-hint">
                         Click sources above to select what to compare (minimum 2 required)
                     </div>
 
@@ -2463,24 +2471,31 @@
                         <div style="margin-bottom: 0.75rem; color: var(--text-secondary); font-size: 0.9rem;">
                             AD inventory: <span id="ad-status-text">Not fetched</span>
                         </div>
-                        <div id="ad-fetch-progress" style="display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 10px; max-width: 500px; margin-left: auto; margin-right: auto;">
+                        <div id="ad-fetch-progress"
+                            style="display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 10px; max-width: 500px; margin-left: auto; margin-right: auto;">
                             <div style="display: flex; align-items: center; gap: 0.75rem;">
                                 <div class="spinner" style="width: 20px; height: 20px; border-width: 3px;"></div>
                                 <div>
-                                    <div id="ad-progress-message" style="color: var(--text-primary); font-weight: 600; margin-bottom: 0.25rem;">Triggering AD inventory script...</div>
-                                    <div id="ad-progress-details" style="font-size: 0.85rem; color: var(--text-secondary);">Please wait while we collect Active Directory data</div>
+                                    <div id="ad-progress-message"
+                                        style="color: var(--text-primary); font-weight: 600; margin-bottom: 0.25rem;">
+                                        Triggering AD inventory script...</div>
+                                    <div id="ad-progress-details"
+                                        style="font-size: 0.85rem; color: var(--text-secondary);">Please wait while we
+                                        collect Active Directory data</div>
                                 </div>
                             </div>
                         </div>
                         <!-- AD Device Selection (DC/Workstation) -->
                         <div style="margin-bottom: 1rem; max-width: 500px; margin-left: auto; margin-right: auto;">
-                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-size: 0.9rem; font-weight: 600; text-align: left;">
+                            <label
+                                style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-size: 0.9rem; font-weight: 600; text-align: left;">
                                 💻 Domain Controller / AD Device
                             </label>
                             <select id="ad-device-select-main" class="settings-select" style="width: 100%;">
                                 <option value="">Select DC device...</option>
                             </select>
-                            <div style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted); text-align: left;">
+                            <div
+                                style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted); text-align: left;">
                                 Select the device with AD query capability (DC with RSAT/AD module)
                             </div>
                         </div>
@@ -2564,7 +2579,7 @@
                 <button type="button" class="modal-close" id="unified-client-modal-close">✕</button>
             </div>
             <div style="padding: 0 2rem 1rem 2rem;">
-                <input type="text" id="client-search-input" placeholder="🔍 Search clients..." 
+                <input type="text" id="client-search-input" placeholder="🔍 Search clients..."
                     style="width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-deep); color: var(--text-primary); font-size: 0.95rem; font-family: 'Outfit', sans-serif; outline: none; transition: all 0.2s ease;"
                     onfocus="this.style.borderColor='var(--primary)'; this.style.boxShadow='0 0 0 3px rgba(139, 92, 246, 0.1)'"
                     onblur="this.style.borderColor='var(--border-subtle)'; this.style.boxShadow='none'">
@@ -2699,7 +2714,8 @@
             </div>
             <div class="modal-content" style="padding: 2rem;">
                 <div class="settings-section">
-                    <div class="settings-section-title" onclick="toggleDebugSection('scripts')" style="cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center;">
+                    <div class="settings-section-title" onclick="toggleDebugSection('scripts')"
+                        style="cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center;">
                         <span>📜 Ninja Scripts (IDs)</span>
                         <span id="debug-scripts-toggle" style="transition: transform 0.2s;">▼</span>
                     </div>
@@ -2711,7 +2727,8 @@
                 </div>
 
                 <div class="settings-section">
-                    <div class="settings-section-title" onclick="toggleDebugSection('devices')" style="cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center;">
+                    <div class="settings-section-title" onclick="toggleDebugSection('devices')"
+                        style="cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center;">
                         <span>💻 Ninja Devices (IDs)</span>
                         <span id="debug-devices-toggle" style="transition: transform 0.2s;">▼</span>
                     </div>
@@ -2797,6 +2814,14 @@
             ninjaDevices: [],  // Store NinjaRMM devices with IDs for remediation
             allNinjaDevices: [],  // All devices (for AD picker)
             offlineDaysThreshold: 30,  // Default offline threshold in days
+            clientId: (function () {
+                let id = localStorage.getItem('comparisonClientId');
+                if (!id) {
+                    id = 'client_' + Math.random().toString(36).substr(2, 9);
+                    localStorage.setItem('comparisonClientId', id);
+                }
+                return id;
+            })(),
             selectedSources: { s1: false, ninja: false, ad: false }  // Track which sources user wants to compare
         };
 
@@ -3044,7 +3069,7 @@
         function toggleDebugSection(section) {
             const content = document.getElementById(`debug-${section}-content`);
             const toggle = document.getElementById(`debug-${section}-toggle`);
-            
+
             if (content.style.display === 'none') {
                 content.style.display = 'block';
                 toggle.style.transform = 'rotate(180deg)';
@@ -3058,23 +3083,23 @@
         function returnToClientSelection() {
             const resultsSection = document.getElementById('results-section');
             const uploadSection = document.querySelector('.upload-section');
-            
+
             if (resultsSection && resultsSection.classList.contains('visible')) {
                 // Hide results
                 resultsSection.classList.remove('visible');
-                
+
                 // Show upload section
                 if (uploadSection) uploadSection.style.display = 'flex';
-                
+
                 // Reset to client selection view
                 document.getElementById('client-selector-prompt').style.display = 'block';
                 document.getElementById('selected-client-display').style.display = 'none';
-                
+
                 // Clear state
                 state.file1.uploaded = false;
                 state.file2.uploaded = false;
                 state.clientName = null;
-                
+
                 updateQuickLoadButton();
             }
         }
@@ -3083,11 +3108,11 @@
         function setupClientSearch() {
             const searchInput = document.getElementById('client-search-input');
             if (!searchInput) return;
-            
+
             searchInput.addEventListener('input', (e) => {
                 const searchTerm = e.target.value.toLowerCase().trim();
                 const clientItems = document.querySelectorAll('#unified-client-modal-content .site-item');
-                
+
                 clientItems.forEach(item => {
                     const clientName = item.querySelector('.site-name').textContent.toLowerCase();
                     if (clientName.includes(searchTerm)) {
@@ -3097,7 +3122,7 @@
                     }
                 });
             });
-            
+
             // Clear search when modal opens
             searchInput.value = '';
         }
@@ -3842,7 +3867,7 @@
             const response = await fetch('/sentinelone/upload', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ file_id: fileId, endpoints: endpoints })
+                body: JSON.stringify({ file_id: fileId, endpoints: endpoints, client_id: state.clientId })
             });
 
             const uploadData = await response.json();
@@ -3923,7 +3948,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         file_id: fileId,
-                        endpoints: data.endpoints
+                        endpoints: data.endpoints,
+                        client_id: state.clientId
                     })
                 });
 
@@ -4353,7 +4379,8 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             file_id: fileId,
-                            endpoints: combined
+                            endpoints: combined,
+                            client_id: state.clientId
                         })
                     });
 
@@ -4463,7 +4490,7 @@
             const response = await fetch('/ninjarmm/upload', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ file_id: fileId, devices: devices })
+                body: JSON.stringify({ file_id: fileId, devices: devices, client_id: state.clientId })
             });
 
             const uploadData = await response.json();
@@ -4547,7 +4574,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         file_id: fileId,
-                        devices: data.devices
+                        devices: data.devices,
+                        client_id: state.clientId
                     })
                 });
 
@@ -4727,7 +4755,8 @@
                         file1_sheet: state.file1.sheet,
                         file1_column: state.file1.column,
                         file2_sheet: state.file2.sheet,
-                        file2_column: state.file2.column
+                        file2_column: state.file2.column,
+                        client_id: state.clientId
                     })
                 });
 
@@ -5613,7 +5642,7 @@
                 const adControls = document.getElementById('ad-controls');
                 if (adControls) adControls.style.display = 'block';
                 updateAdUi();
-                
+
                 // Load AD devices for the selected client
                 loadNinjaDevicesForAD();
 
@@ -5629,7 +5658,8 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             file_id: '1',
-                            endpoints: s1Data.endpoints
+                            endpoints: s1Data.endpoints,
+                            client_id: state.clientId
                         })
                     });
                     const uploadData = await response.json();
@@ -5651,7 +5681,8 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             file_id: '2',
-                            devices: ninjaData.devices
+                            devices: ninjaData.devices,
+                            client_id: state.clientId
                         })
                     });
                     const uploadData = await response.json();
@@ -5671,7 +5702,7 @@
                 document.getElementById('status-fetching').style.display = 'none';
                 document.getElementById('status-comparing').style.display = 'none';
                 document.getElementById('status-complete').style.display = 'none';
-                
+
                 // Show ready status with proceed button
                 const statusReady = document.getElementById('status-ready');
                 const proceedContainer = document.getElementById('proceed-compare-container');
@@ -5693,36 +5724,39 @@
                 // Setup source card click handlers
                 setupSourceCardHandlers();
 
-                // Add event handler to trigger comparison (only once)
+                // Add event handler to trigger comparison (prevent duplicates)
                 const proceedBtn = document.getElementById('proceed-compare-btn');
-                proceedBtn.addEventListener('click', async () => {
-                    // Validate at least 2 sources selected
-                    const selectedCount = Object.values(state.selectedSources).filter(Boolean).length;
-                    if (selectedCount < 2) {
-                        showToast('Please select at least 2 sources to compare', 'error');
-                        return;
-                    }
+                if (proceedBtn && !proceedBtn.dataset.handlerAttached) {
+                    proceedBtn.dataset.handlerAttached = 'true';
+                    proceedBtn.addEventListener('click', async () => {
+                        // Validate at least 2 sources selected
+                        const selectedCount = Object.values(state.selectedSources).filter(Boolean).length;
+                        if (selectedCount < 2) {
+                            showToast('Please select at least 2 sources to compare', 'error');
+                            return;
+                        }
 
-                    // Hide proceed button and ready status
-                    document.getElementById('proceed-compare-container').style.display = 'none';
-                    document.getElementById('status-ready').style.display = 'none';
-                    
-                    // Show comparing status
-                    document.getElementById('status-comparing').style.display = 'flex';
-                    
-                    try {
-                        await runComparisonWithSelectedSources();
-                        snapshotPrimarySources();
-                        updateAdUi();
-                        
-                        // Show complete status
-                        document.getElementById('status-comparing').style.display = 'none';
-                        document.getElementById('status-complete').style.display = 'flex';
-                    } catch (err) {
-                        showToast('Comparison failed: ' + err.message, 'error');
-                        document.getElementById('status-comparing').style.display = 'none';
-                    }
-                }, { once: true });
+                        // Hide proceed button and ready status
+                        document.getElementById('proceed-compare-container').style.display = 'none';
+                        document.getElementById('status-ready').style.display = 'none';
+
+                        // Show comparing status
+                        document.getElementById('status-comparing').style.display = 'flex';
+
+                        try {
+                            await runComparisonWithSelectedSources();
+                            snapshotPrimarySources();
+                            updateAdUi();
+
+                            // Show complete status
+                            document.getElementById('status-comparing').style.display = 'none';
+                            document.getElementById('status-complete').style.display = 'flex';
+                        } catch (err) {
+                            showToast('Comparison failed: ' + err.message, 'error');
+                            document.getElementById('status-comparing').style.display = 'none';
+                        }
+                    });
+                }
 
                 // Save the last source config with client name for quick reload
                 if (s1Id && s1Name) {
@@ -5761,7 +5795,7 @@
 
             // Toggle selection
             state.selectedSources[source] = !state.selectedSources[source];
-            
+
             if (state.selectedSources[source]) {
                 card.classList.add('selected');
             } else {
@@ -5777,7 +5811,7 @@
             if (!hint) return;
 
             const selectedCount = Object.values(state.selectedSources).filter(Boolean).length;
-            
+
             if (selectedCount < 2) {
                 hint.textContent = `Click sources above to select what to compare (minimum 2 required, ${selectedCount} selected)`;
                 hint.style.color = 'var(--accent-amber)';
@@ -5811,6 +5845,7 @@
                         file1_id: source1.fileId,
                         file2_id: source2.fileId,
                         file3_id: state.ad.attached && state.adSource ? state.adSource.fileId : '',
+                        client_id: state.clientId,
                         file1_sheet: source1.sheet,
                         file1_column: source1.column,
                         file2_sheet: source2.sheet,
@@ -5900,7 +5935,7 @@
             const select = document.getElementById('ad-device-select');
             const selectMain = document.getElementById('ad-device-select-main');
             const statusDiv = document.getElementById('ad-device-status');
-            
+
             if (!select && !selectMain) return;
 
             if (select) select.innerHTML = '<option value="">Loading devices...</option>';
@@ -5920,10 +5955,10 @@
 
                     if (data.devices && data.devices.length > 0) {
                         const optionsHTML = '<option value="">-- Select a device (DC recommended) --</option>' +
-                            data.devices.map(device => 
+                            data.devices.map(device =>
                                 `<option value="${device.id}">${escapeHtml(device.name)}</option>`
                             ).join('');
-                        
+
                         if (select) select.innerHTML = optionsHTML;
                         if (selectMain) selectMain.innerHTML = optionsHTML;
 
@@ -6040,7 +6075,7 @@
 
         const adDeviceSelect = document.getElementById('ad-device-select');
         const adDeviceSelectMain = document.getElementById('ad-device-select-main');
-        
+
         if (adDeviceSelect) {
             adDeviceSelect.addEventListener('change', (e) => {
                 const v = parseInt(e.target.value);
@@ -6054,7 +6089,7 @@
                 if (adDeviceSelectMain) adDeviceSelectMain.value = e.target.value;
             });
         }
-        
+
         if (adDeviceSelectMain) {
             adDeviceSelectMain.addEventListener('change', (e) => {
                 const v = parseInt(e.target.value);
@@ -6122,6 +6157,15 @@
                         adCard.classList.add('selected');
                         updateSourceSelectionHint();
                     }
+                    // Re-show the proceed compare container so users can re-compare with AD
+                    const proceedContainer = document.getElementById('proceed-compare-container');
+                    const statusReady = document.getElementById('status-ready');
+                    const statusComplete = document.getElementById('status-complete');
+                    if (proceedContainer && statusComplete && statusComplete.style.display !== 'none') {
+                        // Only re-show if comparison was already done (status-complete visible)
+                        proceedContainer.style.display = 'block';
+                        if (statusReady) statusReady.style.display = 'flex';
+                    }
                 } else {
                     adCard.classList.add('disabled');
                     state.selectedSources.ad = false;
@@ -6144,9 +6188,9 @@
         }
 
         async function fetchAdInventory(options = {}) {
-            snapshotPrimarySources();
-            if (!state.primarySources) {
-                showToast('Select a client and load Ninja/S1 first', 'error');
+            // Allow AD loading if at least one source is loaded
+            if (!state.file1.uploaded && !state.file2.uploaded) {
+                showToast('Select a client and load data first', 'error');
                 return;
             }
 
@@ -6178,13 +6222,13 @@
             const progressDivResults = document.getElementById('ad-fetch-progress-results');
             const progressMsgResults = document.getElementById('ad-progress-message-results');
             const progressDetailsResults = document.getElementById('ad-progress-details-results');
-            
+
             const progressDivs = [progressDiv, progressDivResults].filter(Boolean);
             const progressMsgs = [progressMsg, progressMsgResults].filter(Boolean);
             const progressDetailsList = [progressDetails, progressDetailsResults].filter(Boolean);
-            
+
             progressDivs.forEach(div => div.style.display = 'block');
-            
+
             if (options.syncOnly) {
                 progressMsgs.forEach(msg => msg.textContent = 'Syncing AD inventory from Ninja custom fields...');
                 progressDetailsList.forEach(detail => detail.textContent = 'Retrieving cached Active Directory data');
@@ -6227,7 +6271,7 @@
                 const attachResp = await fetch('/ad/attach', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ client, days, file_id: '3' })
+                    body: JSON.stringify({ client, days, file_id: '3', client_id: state.clientId })
                 });
 
                 const attachData = await attachResp.json();
