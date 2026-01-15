@@ -3612,6 +3612,7 @@
             } catch (err) {
                 showToast(err.message || 'Failed to fetch SentinelOne endpoints', 'error');
                 throw err; // Re-throw so refresh function can catch it
+            }
         }
 
         function handleSentinelOneUploadSuccess(fileId, data, siteName = 'SentinelOne', siteId = 'all') {
@@ -4079,6 +4080,7 @@
             } catch (err) {
                 showToast(err.message || 'Failed to fetch NinjaRMM devices', 'error');
                 throw err; // Re-throw so refresh function can catch it
+            }
         }
 
         function handleNinjaUploadSuccess(fileId, data, orgName = 'NinjaRMM', orgId = 'all') {
@@ -4687,7 +4689,6 @@
         document.getElementById('debug-modal-close').addEventListener('click', () => closeModal('debug-modal'));
 
         // Prevent clicks inside modals from closing them
-        document.getElementById('modal-content').addEventListener('click', e => e.stopPropagation());
         document.getElementById('unified-client-modal-content-wrapper').addEventListener('click', e => e.stopPropagation());
         document.querySelector('#history-modal .modal').addEventListener('click', e => e.stopPropagation());
         document.getElementById('debug-modal-content-wrapper').addEventListener('click', e => e.stopPropagation());
@@ -4696,7 +4697,7 @@
         ['unified-client-modal', 'history-modal', 'settings-modal', 'debug-modal'].forEach(id => {
             document.getElementById(id).addEventListener('click', (e) => {
                 if (e.target.classList.contains('modal-overlay')) {
-                    else if (id === 'unified-client-modal') closeUnifiedClientModal();
+                    if (id === 'unified-client-modal') closeUnifiedClientModal();
                     else closeModal(id);
                 }
             });
