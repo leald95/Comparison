@@ -9,6 +9,11 @@ ENV/
 # Uploaded files
 uploads/
 
+# Local runtime artifacts
+comparison_history.db
+cookies.txt
+.ninja_token_cache.json
+
 # Python cache
 __pycache__/
 *.py[cod]
@@ -29,3 +34,8 @@ instance/
 # OS
 .DS_Store
 Thumbs.db
+
+# Node
+node_modules/
+package-lock.json
+package.json
