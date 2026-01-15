@@ -198,6 +198,21 @@
             box-shadow: 0 6px 25px rgba(59, 130, 246, 0.4);
         }
 
+        .refresh-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin-top: 1rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .refresh-toggle input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent-cyan);
+        }
+
         .selected-client-display {
             padding: 2rem 0;
         }
@@ -2099,6 +2114,10 @@
                     <button type="button" class="select-client-main-btn" id="select-client-main-btn">
                         <span class="btn-text">Choose Client</span>
                     </button>
+                    <label class="refresh-toggle">
+                        <input type="checkbox" id="force-refresh-toggle">
+                        Force refresh (ignore cache)
+                    </label>
                 </div>
 
                 <div class="selected-client-display" id="selected-client-display" style="display: none;">
@@ -2198,6 +2217,7 @@
                                 style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted); text-align: left;">
                                 Select the device with AD query capability (DC with RSAT/AD module)
                             </div>
+                            <div id="ad-device-status" style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted); text-align: left;"></div>
                         </div>
 
                         <div style="display:flex; gap:0.75rem; justify-content:center; flex-wrap:wrap;">
@@ -2453,6 +2473,7 @@
             ad: { attached: false, days: 30, scriptId: null, deviceId: null, count: 0, receivedAt: null },
             adSource: null,
             currentFileIdForS1: null,
+            forceRefreshOnSelect: false,
             testingViewSort: { field: 'name', direction: 'asc' },
             clientName: null,
             currentNinjaOrgId: null,  // Track current org_id for device picker filtering
@@ -2554,6 +2575,13 @@
                 }
             }
             btn.classList.remove('visible');
+        }
+
+        function updateCompareButton() {
+            const proceedBtn = document.getElementById('proceed-compare-btn');
+            if (!proceedBtn) return;
+            const selectedCount = Object.values(state.selectedSources || {}).filter(Boolean).length;
+            proceedBtn.disabled = selectedCount < 2;
         }
 
         async function loadLastSources() {
@@ -3835,7 +3863,39 @@
             }
         }
 
+        function buildS1OfflineDevices(endpoints) {
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - state.offlineDaysThreshold);
+            return (endpoints || []).filter(ep => {
+                if (ep.lastActive) {
+                    return new Date(ep.lastActive) < cutoffDate;
+                }
+                return false;
+            }).map(ep => ({ name: ep.name, lastSeen: ep.lastActive }));
+        }
+
+        function buildNinjaOfflineDevices(devices) {
+            const cutoffTimestamp = (Date.now() / 1000) - (state.offlineDaysThreshold * 24 * 60 * 60);
+            return (devices || []).filter(dev => {
+                return dev.lastContact && dev.lastContact < cutoffTimestamp;
+            }).map(dev => ({
+                name: dev.name,
+                lastSeen: new Date(dev.lastContact * 1000).toISOString()
+            }));
+        }
+
         async function fetchFromS1(siteId, siteName) {
+            if (!state.forceRefreshOnSelect) {
+                const cacheId = siteId || 'all';
+                const cached = getCache('S1', cacheId, { clientId: state.clientId });
+                if (cached && cached.data && cached.data.endpoints) {
+                    return {
+                        endpoints: cached.data.endpoints,
+                        offlineDevices: buildS1OfflineDevices(cached.data.endpoints),
+                        count: cached.data.count
+                    };
+                }
+            }
             const url = siteId && siteId !== 'all'
                 ? `/sentinelone/endpoints?site_id=${siteId}`
                 : '/sentinelone/endpoints';
@@ -3845,21 +3905,26 @@
 
             if (!data.success) throw new Error(data.error);
 
-            // Calculate offline devices
-            const cutoffDate = new Date();
-            cutoffDate.setDate(cutoffDate.getDate() - 30);
-            const offlineDevices = data.endpoints.filter(ep => {
-                if (ep.lastActive) {
-                    const lastActiveDate = new Date(ep.lastActive);
-                    return lastActiveDate < cutoffDate;
-                }
-                return false;
-            }).map(ep => ({ name: ep.name, lastSeen: ep.lastActive }));
-
-            return { endpoints: data.endpoints, offlineDevices };
+            return {
+                endpoints: data.endpoints,
+                offlineDevices: buildS1OfflineDevices(data.endpoints),
+                count: data.count
+            };
         }
 
         async function fetchFromNinja(orgId, orgName) {
+            if (!state.forceRefreshOnSelect) {
+                const cacheId = orgId || 'all';
+                const cached = getCache('Ninja', cacheId, { clientId: state.clientId });
+                if (cached && cached.data && cached.data.devices) {
+                    state.ninjaDevices = cached.data.devices;
+                    return {
+                        devices: cached.data.devices,
+                        offlineDevices: buildNinjaOfflineDevices(cached.data.devices),
+                        count: cached.data.count
+                    };
+                }
+            }
             const url = orgId && orgId !== 'all'
                 ? `/ninjarmm/devices?org_id=${orgId}`
                 : '/ninjarmm/devices';
@@ -3872,16 +3937,11 @@
             // Store full device data with IDs for remediation
             state.ninjaDevices = data.devices;
 
-            // Calculate offline devices
-            const cutoffTimestamp = (Date.now() / 1000) - (state.offlineDaysThreshold * 24 * 60 * 60);
-            const offlineDevices = data.devices.filter(dev => {
-                return dev.lastContact && dev.lastContact < cutoffTimestamp;
-            }).map(dev => ({
-                name: dev.name,
-                lastSeen: new Date(dev.lastContact * 1000).toISOString()
-            }));
-
-            return { devices: data.devices, offlineDevices };
+            return {
+                devices: data.devices,
+                offlineDevices: buildNinjaOfflineDevices(data.devices),
+                count: data.count
+            };
         }
 
         async function refreshSource(fileId) {
@@ -5019,6 +5079,14 @@
             openUnifiedClientModal('main');
         });
 
+        const forceRefreshToggle = document.getElementById('force-refresh-toggle');
+        if (forceRefreshToggle) {
+            forceRefreshToggle.addEventListener('change', (e) => {
+                state.forceRefreshOnSelect = e.target.checked;
+                localStorage.setItem('forceRefreshOnSelect', String(state.forceRefreshOnSelect));
+            });
+        }
+
         // Change client button
         document.getElementById('change-client-main-btn').addEventListener('click', () => {
             document.getElementById('client-selector-prompt').style.display = 'block';
@@ -5374,6 +5442,13 @@
             const savedAdDeviceId = localStorage.getItem('adDeviceId');
             if (savedAdDeviceId) {
                 state.ad.deviceId = parseInt(savedAdDeviceId);
+            }
+
+            const savedForceRefresh = localStorage.getItem('forceRefreshOnSelect');
+            if (savedForceRefresh !== null) {
+                state.forceRefreshOnSelect = savedForceRefresh === 'true';
+                const toggle = document.getElementById('force-refresh-toggle');
+                if (toggle) toggle.checked = state.forceRefreshOnSelect;
             }
         }
 
