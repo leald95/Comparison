@@ -99,8 +99,8 @@ try {
   Fail "Get-ADComputer failed: $($_.Exception.Message)"
 }
 
-# Store only computer names to keep the payload small enough for Ninja custom field limits.
-$results = New-Object System.Collections.Generic.List[string]
+# Store computer names with last logon time.
+$results = New-Object System.Collections.Generic.List[object]
 
 foreach ($c in $computers) {
   $name = $c.Name
@@ -116,7 +116,10 @@ foreach ($c in $computers) {
   }
 
   if ($dt -ge $cutoff) {
-    $results.Add([string]$name)
+    $results.Add([pscustomobject]@{
+      name = [string]$name
+      lastLogonUtc = $dt.ToUniversalTime().ToString('o')
+    })
   }
 }
 
