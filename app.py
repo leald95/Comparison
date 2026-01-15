@@ -16,9 +16,8 @@ import hmac
 import hashlib
 import sqlite3
 from urllib.parse import urlencode
-from flask import Flask, render_template, request, jsonify, session, Response, redirect, url_for, send_from_directory, make_response, g
+from flask import Flask, render_template, request, jsonify, session, Response, redirect, send_from_directory, g
 from itsdangerous import URLSafeSerializer, BadSignature
-from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import pandas as pd
 import uuid
@@ -1336,21 +1335,6 @@ def _extract_and_validate_ad_data(val_str):
     return parsed
 
 
-def read_excel_file(filepath):
-    """Read Excel file and return dataframe with sheet info."""
-    try:
-        # Try reading with openpyxl first (for .xlsx)
-        xl = pd.ExcelFile(filepath, engine='openpyxl')
-    except Exception:
-        try:
-            # Fall back to xlrd for older .xls files
-            xl = pd.ExcelFile(filepath, engine='xlrd')
-        except Exception as e:
-            raise ValueError(f"Could not read Excel file: {str(e)}")
-    
-    return xl
-
-
 @app.route('/')
 def index():
     """Render the main page."""
@@ -1475,7 +1459,10 @@ def compare_columns():
                     col3_data = df3[col3_name].dropna().astype(str).tolist()
                 else:
                     col3_data = []
-                set3_norm = {normalize_value(v) for v in col3_data if normalize_value(v)}
+                for v in col3_data:
+                    normalized = normalize_value(v)
+                    if normalized:
+                        set3_norm.add(normalized)
                 logger.info('Loaded AD data for comparison: %d items', len(set3_norm))
             except Exception as e:
                 logger.warning('Failed to load AD data for comparison: %s', str(e))
@@ -1511,28 +1498,45 @@ def compare_columns():
         matched_from_file1 = set()
         matched_from_file2 = set()
         min_prefix_length = 10
-        
+
+        prefix_buckets = {}
+        for norm2 in only_in_file2_norm:
+            if len(norm2) < min_prefix_length:
+                continue
+            max_len = min(15, len(norm2))
+            for plen in range(min_prefix_length, max_len + 1):
+                prefix = norm2[:plen]
+                prefix_buckets.setdefault(prefix, []).append(norm2)
+
         for norm1 in list(only_in_file1_norm):
+            if len(norm1) < min_prefix_length:
+                continue
             orig1 = norm_to_orig1[norm1]
             prefix1 = norm1[:15] if len(norm1) > 15 else norm1
-            
-            for norm2 in list(only_in_file2_norm):
+
+            candidates = set()
+            max_len1 = min(15, len(norm1))
+            for plen in range(min_prefix_length, max_len1 + 1):
+                prefix = norm1[:plen]
+                for norm2 in prefix_buckets.get(prefix, []):
+                    candidates.add(norm2)
+
+            for norm2 in candidates:
                 if norm2 in matched_from_file2:
                     continue
                 orig2 = norm_to_orig2[norm2]
                 prefix2 = norm2[:15] if len(norm2) > 15 else norm2
-                
-                if len(norm1) >= min_prefix_length and len(norm2) >= min_prefix_length:
-                    if prefix1 == prefix2 or norm1.startswith(norm2) or norm2.startswith(norm1):
-                        prefix_matches.append({
-                            'file1': orig1,
-                            'file2': orig2,
-                            'matched_on': 'prefix',
-                            'in_ad': norm1 in set3_norm or norm2 in set3_norm if set3_norm else None
-                        })
-                        matched_from_file1.add(norm1)
-                        matched_from_file2.add(norm2)
-                        break
+
+                if prefix1 == prefix2 or norm1.startswith(norm2) or norm2.startswith(norm1):
+                    prefix_matches.append({
+                        'file1': orig1,
+                        'file2': orig2,
+                        'matched_on': 'prefix',
+                        'in_ad': norm1 in set3_norm or norm2 in set3_norm if set3_norm else None
+                    })
+                    matched_from_file1.add(norm1)
+                    matched_from_file2.add(norm2)
+                    break
         
         # Remove prefix-matched items
         only_in_file1_norm -= matched_from_file1
