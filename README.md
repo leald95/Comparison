@@ -8,7 +8,7 @@ A modern web application to compare endpoints between SentinelOne (EDR) and Ninj
 - **SentinelOne Integration**: Fetch live endpoint data from your SentinelOne console
 - **NinjaRMM Integration**: Fetch live device data from your NinjaRMM account
 - **Automated Comparison**: Instant side-by-side comparison with intelligent matching
-- **Comprehensive Testing View**:
+- **Comprehensive Comparison View**:
   - Row-by-row device comparison showing matches and differences
   - Offline device detection (> 30 days)
   - Smart prefix matching for truncated hostnames
@@ -100,14 +100,14 @@ A modern web application to compare endpoints between SentinelOne (EDR) and Ninj
 3. **Configure Remediation (Optional)**:
    - Click the ⚙️ **Settings** button in the header
    - Select a NinjaRMM script for SentinelOne installation/repair
-   - This enables the "Fix S1" button in the Testing View
+   - This enables the "Fix S1" button in the Comparison View
 
 4. **Select a client**:
    - Click "Choose Client" to see all matched clients across both platforms
    - The app automatically fetches and compares data
 
 5. **Review results**:
-   - **Testing View**: See all devices with status indicators
+   - **Comparison View**: See all devices with status indicators
    - **Remediation**: Click "🛠️ Fix S1" to run the configured script on devices where:
      - Device is **currently online** in NinjaRMM (last contact within 5 minutes)
      - SentinelOne is missing or offline

@@ -44,13 +44,13 @@ if (-not $NinjaPropertySet) {
 Write-Host "Script started with Days=$Days, RunId='$RunId'"
 
 # Validate and apply defaults for Days
-if (-not $Days -or $Days -eq 0) {
+if ($null -eq $Days) {
   $Days = 30
-  Write-Host "Days parameter not provided or invalid, using default: $Days"
+  Write-Host "Days parameter not provided, using default: $Days"
 }
 
-if ($Days -notin @(30,60,90)) {
-  Fail "Days must be one of: 30, 60, 90 (received: $Days)"
+if ($Days -ne 0 -and $Days -notin @(30,60,90)) {
+  Fail "Days must be one of: 0, 30, 60, 90 (received: $Days)"
 }
 
 # Validate and apply defaults for RunId
@@ -85,7 +85,10 @@ try {
 
 if ([string]::IsNullOrWhiteSpace($rootDn)) { Fail "Domain root DN was empty" }
 
-$cutoff = (Get-Date).AddDays(-$Days)
+$cutoff = $null
+if ($Days -gt 0) {
+  $cutoff = (Get-Date).AddDays(-$Days)
+}
 
 # Enabled computers only:
 # userAccountControl disable bit (2) NOT set
@@ -99,7 +102,7 @@ try {
   Fail "Get-ADComputer failed: $($_.Exception.Message)"
 }
 
-# Store computer names with last logon time.
+# Store computer names (omit last logon time to keep payload small).
 $results = New-Object System.Collections.Generic.List[object]
 
 foreach ($c in $computers) {
@@ -107,19 +110,20 @@ foreach ($c in $computers) {
   if ([string]::IsNullOrWhiteSpace($name)) { continue }
 
   $llt = $c.lastLogonTimestamp
-  if (-not $llt) { continue }
+  if ($cutoff -eq $null) {
+    $results.Add([string]$name)
+  } else {
+    if (-not $llt) { continue }
 
-  try {
-    $dt = [DateTime]::FromFileTimeUtc([Int64]$llt)
-  } catch {
-    continue
-  }
+    try {
+      $dt = [DateTime]::FromFileTimeUtc([Int64]$llt)
+    } catch {
+      continue
+    }
 
-  if ($dt -ge $cutoff) {
-    $results.Add([pscustomobject]@{
-      name = [string]$name
-      lastLogonUtc = $dt.ToUniversalTime().ToString('o')
-    })
+    if ($dt -ge $cutoff) {
+      $results.Add([string]$name)
+    }
   }
 }
 
@@ -133,8 +137,8 @@ $payload = [pscustomobject]@{
 $json = $payload | ConvertTo-Json -Depth 6
 
 # Ninja custom fields can have size limits; keep the payload safe.
-# Many tenants enforce ~10,000 characters on text fields.
-$maxLen = 9500
+# Multi-line fields are capped at 10,000 characters.
+$maxLen = 10000
 $valueToStore = $json
 if ($valueToStore.Length -gt $maxLen) {
   Fail "Payload too large for custom field ($($valueToStore.Length) chars). Reduce scope or increase field size."

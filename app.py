@@ -17,6 +17,7 @@ import hashlib
 import sqlite3
 from urllib.parse import urlencode
 from flask import Flask, render_template, request, jsonify, session, Response, redirect, send_from_directory, g
+from werkzeug.middleware.proxy_fix import ProxyFix
 from itsdangerous import URLSafeSerializer, BadSignature
 from dotenv import load_dotenv
 import pandas as pd
@@ -29,7 +30,7 @@ logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO').upper())
 logger = logging.getLogger(__name__)
 
 # Simple in-process cache for Ninja OAuth tokens
-TOKEN_CACHE_FILE = '.ninja_token_cache.json'
+TOKEN_CACHE_FILE = None
 _NINJA_TOKEN_CACHE = {
     'access_token': None,
     'refresh_token': None,
@@ -38,14 +39,26 @@ _NINJA_TOKEN_CACHE = {
     'grant_type': None,
 }
 
+_RATE_LIMIT_BUCKETS = {}
+_RATE_LIMIT_DEFAULT_WINDOW_SECONDS = int(os.getenv('RATE_LIMIT_WINDOW_SECONDS', '60'))
+_RATE_LIMIT_DEFAULT_LIMIT = int(os.getenv('RATE_LIMIT_REQUESTS', '60'))
+
 def _save_ninja_token_cache():
+    if not TOKEN_CACHE_FILE:
+        return
     try:
         with open(TOKEN_CACHE_FILE, 'w') as f:
             json.dump(_NINJA_TOKEN_CACHE, f)
+        try:
+            os.chmod(TOKEN_CACHE_FILE, 0o600)
+        except Exception:
+            pass
     except Exception as e:
         logger.warning('Failed to save Ninja token cache: %s', e)
 
 def _load_ninja_token_cache():
+    if not TOKEN_CACHE_FILE:
+        return
     if os.path.exists(TOKEN_CACHE_FILE):
         try:
             with open(TOKEN_CACHE_FILE, 'r') as f:
@@ -55,11 +68,40 @@ def _load_ninja_token_cache():
         except Exception as e:
             logger.warning('Failed to load Ninja token cache: %s', e)
 
-# Initial load
-_load_ninja_token_cache()
+
+def _get_request_ip():
+    forwarded = request.headers.get('X-Forwarded-For', '')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.remote_addr or ''
+
+
+def _rate_limit(bucket, limit=None, window_seconds=None):
+    limit = limit if limit is not None else _RATE_LIMIT_DEFAULT_LIMIT
+    window_seconds = window_seconds if window_seconds is not None else _RATE_LIMIT_DEFAULT_WINDOW_SECONDS
+    ip = _get_request_ip()
+    if not ip:
+        return None
+
+    now = time.time()
+    key = f"{bucket}:{ip}"
+    entry = _RATE_LIMIT_BUCKETS.get(key, {'count': 0, 'window_start': now})
+    if now - entry['window_start'] >= window_seconds:
+        entry = {'count': 0, 'window_start': now}
+
+    entry['count'] += 1
+    _RATE_LIMIT_BUCKETS[key] = entry
+
+    if entry['count'] > limit:
+        retry_after = max(0, int(window_seconds - (now - entry['window_start'])))
+        return jsonify({'error': 'Rate limit exceeded', 'retry_after': retry_after}), 429
+    return None
+
+
 # Global store for file paths, keyed by frontend clientId.
 # This acts as a backup to the Flask session, which can be unstable in some environments.
 _CLIENT_FILE_STORE = {}
+
 _CLIENT_ID_COOKIE_NAME = 'comparison_client_id'
 _CLIENT_ID_COOKIE_MAX_AGE_SECONDS = int(os.getenv('CLIENT_ID_COOKIE_MAX_AGE_SECONDS', '2592000'))
 _CLIENT_ID_SIGNER = None
@@ -104,22 +146,12 @@ def _get_client_id_from_cookie():
         return None
 
 def _resolve_client_id(data=None):
-    """Resolve client_id from session or signed cookie; only accept payload when no stored id exists."""
-    payload = {}
-    if isinstance(data, dict):
-        payload = data
-    elif request.is_json:
-        payload = request.get_json(silent=True) or {}
-
-    payload_client = payload.get('client_id') if isinstance(payload, dict) else None
+    """Resolve client_id from session or signed cookie only."""
     session_client = session.get('client_id') or _get_client_id_from_cookie()
-
     if session_client:
-        if payload_client and str(payload_client) != str(session_client):
-            logger.warning('Ignoring client_id from payload (client mismatch)')
         client_id = session_client
     else:
-        client_id = payload_client
+        client_id = uuid.uuid4().hex
 
     if client_id:
         client_id = str(client_id)
@@ -127,6 +159,8 @@ def _resolve_client_id(data=None):
         session.modified = True
         g.client_id = client_id
     return client_id
+
+
 
 def _get_client_id(data=None):
     """Extract client_id from request JSON, session, or cookie."""
@@ -426,6 +460,14 @@ def _collect_referenced_paths():
         if isinstance(store_files, dict):
             referenced.update(store_files.values())
     return {os.path.abspath(p) for p in referenced if p and not _is_db_ref(p)}
+
+
+def _should_prune_upload(path):
+    prefix = app.config.get('UPLOAD_INSTANCE_PREFIX', '')
+    if not prefix:
+        return True
+    return os.path.basename(path).startswith(prefix)
+
 
 def _remove_client_file_ref(client_id, file_id):
     if client_id and client_id in _CLIENT_FILE_STORE:
@@ -751,11 +793,20 @@ app.config['SESSION_COOKIE_SECURE'] = os.getenv(
 app.config['SESSION_REFRESH_EACH_REQUEST'] = True
 app.config['SESSION_COOKIE_DOMAIN'] = None
 app.config['SERVER_SESSION_VERSION'] = uuid.uuid4().hex
+app.config['UPLOAD_INSTANCE_PREFIX'] = app.config['SERVER_SESSION_VERSION'][:8]
+
+# Token cache location for Ninja OAuth tokens
+try:
+    os.makedirs(app.instance_path, exist_ok=True)
+except Exception:
+    pass
+TOKEN_CACHE_FILE = os.path.join(app.instance_path, 'ninja_token_cache.json')
+_load_ninja_token_cache()
+
 
 
 def _is_local_request():
-    addr = request.headers.get('X-Forwarded-For', request.remote_addr or '')
-    addr = addr.split(',')[0].strip()
+    addr = request.remote_addr or ''
     return addr in ('127.0.0.1', '::1')
 
 
@@ -827,8 +878,16 @@ def _set_security_headers(resp):
     resp.headers.setdefault('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
     resp.headers.setdefault(
         'Content-Security-Policy',
-        f"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; {script_src}; connect-src 'self'"
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        f"{script_src}; "
+        "connect-src 'self'"
     )
+    if resp.mimetype == 'text/html':
+        resp.headers.setdefault('Cache-Control', 'no-store')
+        resp.headers.setdefault('Pragma', 'no-cache')
     client_id = getattr(g, 'client_id', None) or session.get('client_id')
     if client_id:
         try:
@@ -849,13 +908,30 @@ def _set_security_headers(resp):
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max
 
+# Trust proxy headers only when explicitly enabled (prevents spoofing).
+if os.getenv('ENABLE_PROXY_FIX', '0') in ('1', 'true', 'True'):
+    try:
+        proxy_count = int(os.getenv('PROXY_FIX_HOPS', '1'))
+    except Exception:
+        proxy_count = 1
+    if proxy_count > 0:
+        app.wsgi_app = ProxyFix(
+            app.wsgi_app,
+            x_for=proxy_count,
+            x_proto=proxy_count,
+            x_host=proxy_count,
+            x_port=proxy_count,
+            x_prefix=proxy_count,
+        )
+
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 _init_history_db()
 
 def _require_csrf():
-    if request.method != 'POST':
+    if request.method not in ('POST', 'PUT', 'PATCH', 'DELETE'):
         return None
+
 
     token = request.headers.get('X-CSRF-Token')
     if not token:
@@ -1128,6 +1204,44 @@ def _get_ninja_device_custom_field(api_url, headers, auth, device_id: int, field
     return None
 
 
+def _get_ninja_device(api_url, headers, auth, device_id):
+    endpoints = [
+        f'{api_url}/v2/device/{device_id}',
+        f'{api_url}/api/v2/device/{device_id}',
+        f'{api_url}/v2/devices/{device_id}',
+        f'{api_url}/api/v2/devices/{device_id}',
+    ]
+    for endpoint in endpoints:
+        try:
+            r = requests.get(endpoint, headers=headers, auth=auth, timeout=15)
+            if r.status_code != 200:
+                continue
+            payload = r.json()
+            if isinstance(payload, dict) and payload:
+                return payload
+        except Exception:
+            continue
+    return None
+
+
+def _ensure_ninja_script_allowed(api_url, headers, auth, script_id, device_id=None):
+    allowed = os.getenv('NINJARMM_ALLOWED_SCRIPT_IDS', '').strip()
+    if allowed:
+        try:
+            allowed_ids = {int(x) for x in re.split(r'[\s,]+', allowed) if x}
+        except Exception:
+            return jsonify({'error': 'Server allowlist is misconfigured'}), 500
+        if script_id not in allowed_ids:
+            return jsonify({'error': 'Script not allowed'}), 403
+        return None
+
+    uid = _lookup_ninja_script_uid(api_url, headers, auth, script_id, device_id=device_id)
+    if not uid:
+        return jsonify({'error': 'Script not found'}), 404
+    return None
+
+
+
 def _get_ninja_organization_custom_field(api_url, headers, auth, org_id: int, field_name: str):
     endpoints = [
         f'{api_url}/v2/organization/{org_id}/custom-fields',
@@ -1365,9 +1479,14 @@ def favicon():
 @app.route('/compare', methods=['POST'])
 def compare_columns():
     """Compare selected columns from both files using set-based comparison."""
+    rate_err = _rate_limit('compare')
+    if rate_err:
+        return rate_err
+
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err
+
 
     data = request.json
 
@@ -1447,6 +1566,7 @@ def compare_columns():
         
         # Load AD data if provided
         set3_norm = set()
+        norm_to_orig3 = {}
         if file3_id:
             try:
                 ad_payload = _get_source_payload(client_id, file3_id) if _data_db_enabled() else None
@@ -1463,6 +1583,8 @@ def compare_columns():
                     normalized = normalize_value(v)
                     if normalized:
                         set3_norm.add(normalized)
+                        if normalized not in norm_to_orig3:
+                            norm_to_orig3[normalized] = v
                 logger.info('Loaded AD data for comparison: %d items', len(set3_norm))
             except Exception as e:
                 logger.warning('Failed to load AD data for comparison: %s', str(e))
@@ -1560,7 +1682,15 @@ def compare_columns():
         only_in_ad = []
         if set3_norm:
             only_in_ad_norm = set3_norm - set1_norm - set2_norm - matched_from_file1 - matched_from_file2
-            only_in_ad = [{'name': n, 'in_ad': True, 's1_missing': True, 'ninja_missing': True} for n in sorted(only_in_ad_norm)]
+            only_in_ad = [
+                {
+                    'name': norm_to_orig3.get(n, n),
+                    'in_ad': True,
+                    's1_missing': True,
+                    'ninja_missing': True,
+                }
+                for n in sorted(only_in_ad_norm)
+            ]
         
         # Calculate statistics
         unique_file1 = len(set1_norm)
@@ -1620,15 +1750,20 @@ def compare_columns():
         return jsonify({'error': f'Column not found: {str(e)}'}), 400
     except Exception as e:
         logger.error(f'Comparison error: {str(e)}', exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Comparison failed'}), 500
 
 
 @app.route('/session/sync', methods=['POST'])
 def session_sync():
     """Sync session files from global store for the given client_id."""
+    rate_err = _rate_limit('session_sync')
+    if rate_err:
+        return rate_err
+
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err
+
 
     data = request.get_json(silent=True) or {}
     client_id = _resolve_client_id(data)
@@ -1647,8 +1782,13 @@ def session_sync():
 
 @app.route('/comparisons', methods=['GET'])
 def list_comparisons():
+    rate_err = _rate_limit('comparisons_list')
+    if rate_err:
+        return rate_err
+
     if not _history_db_enabled():
         return jsonify({'error': 'History backend disabled'}), 404
+
 
     client_id = _resolve_client_id({'client_id': request.args.get('client_id')})
     if not client_id:
@@ -1702,8 +1842,13 @@ def list_comparisons():
 
 @app.route('/comparisons/<comparison_id>', methods=['GET'])
 def get_comparison(comparison_id):
+    rate_err = _rate_limit('comparisons_get')
+    if rate_err:
+        return rate_err
+
     if not _history_db_enabled():
         return jsonify({'error': 'History backend disabled'}), 404
+
 
     client_id = _resolve_client_id({'client_id': request.args.get('client_id')})
     if not client_id:
@@ -1758,12 +1903,17 @@ def get_comparison(comparison_id):
 
 @app.route('/comparisons/delete', methods=['POST'])
 def delete_comparison():
+    rate_err = _rate_limit('comparisons_delete')
+    if rate_err:
+        return rate_err
+
     if not _history_db_enabled():
         return jsonify({'error': 'History backend disabled'}), 404
 
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err
+
 
     data = request.get_json(silent=True) or {}
     comparison_id = data.get('id')
@@ -1786,6 +1936,10 @@ def delete_comparison():
 @app.route('/sentinelone/sites', methods=['GET'])
 def get_sentinelone_sites():
     """Fetch list of sites from SentinelOne API."""
+    rate_err = _rate_limit('sentinelone_sites')
+    if rate_err:
+        return rate_err
+
     api_url = os.getenv('SENTINELONE_API_URL')
     api_token = os.getenv('SENTINELONE_API_TOKEN')
     
@@ -1793,6 +1947,7 @@ def get_sentinelone_sites():
         return jsonify({
             'error': 'SentinelOne API credentials not configured. Please set SENTINELONE_API_URL and SENTINELONE_API_TOKEN in .env file'
         }), 400
+
     
     try:
         headers = {
@@ -1832,17 +1987,22 @@ def get_sentinelone_sites():
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'SentinelOne API connection error: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Server error'}), 500
 
 
 @app.route('/sentinelone/endpoints', methods=['GET'])
 def get_sentinelone_endpoints():
     """Fetch endpoint names and last active dates from SentinelOne API."""
+    rate_err = _rate_limit('sentinelone_endpoints')
+    if rate_err:
+        return rate_err
+
     api_url = os.getenv('SENTINELONE_API_URL')
     api_token = os.getenv('SENTINELONE_API_TOKEN')
     site_id = request.args.get('site_id')
     if site_id in [None, '', 'all', 'null', 'undefined']:
         site_id = None
+
     
     logger.debug("SentinelOne endpoints request site_id=%s", site_id)
     if not api_url or not api_token:
@@ -1921,15 +2081,20 @@ def get_sentinelone_endpoints():
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'SentinelOne API connection error: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Server error'}), 500
 
 
 @app.route('/sentinelone/upload', methods=['POST'])
 def upload_sentinelone_data():
     """Create a virtual file from SentinelOne endpoint data."""
+    rate_err = _rate_limit('sentinelone_upload')
+    if rate_err:
+        return rate_err
+
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err
+
 
     data = request.json
     file_id = str(data.get('file_id', '1'))
@@ -1968,7 +2133,9 @@ def upload_sentinelone_data():
 
             # Generate unique filename
             unique_id = str(uuid.uuid4())
-            filename = f'sentinelone_endpoints_{unique_id}.xlsx'
+            prefix = app.config.get('UPLOAD_INSTANCE_PREFIX', '')
+            filename = f'{prefix}_sentinelone_endpoints_{unique_id}.xlsx' if prefix else f'sentinelone_endpoints_{unique_id}.xlsx'
+
             filepath = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
             # Save to Excel
@@ -2007,7 +2174,7 @@ def upload_sentinelone_data():
 
     except Exception as e:
         logger.error('SentinelOne upload error: %s', str(e), exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Server error'}), 500
     finally:
         _release_upload_lock(lock_key)
 
@@ -2019,8 +2186,13 @@ def upload_sentinelone_data():
 @app.route('/ninjarmm/oauth/authorize', methods=['GET'])
 def ninjarmm_oauth_authorize():
     """Initiate OAuth authorization code flow - redirects user to NinjaRMM login."""
+    rate_err = _rate_limit('ninja_oauth_authorize')
+    if rate_err:
+        return rate_err
+
     client_id = os.getenv('NINJARMM_CLIENT_ID')
     redirect_uri = os.getenv('NINJARMM_OAUTH_REDIRECT_URI')
+
     # OAuth authorization happens on app.ninjarmm.com (central OAuth server)
     oauth_url = os.getenv('NINJARMM_OAUTH_URL', 'https://app.ninjarmm.com')
     scope = os.getenv('NINJARMM_OAUTH_SCOPE', 'monitoring management offline_access')
@@ -2055,8 +2227,13 @@ def ninjarmm_oauth_authorize():
 @app.route('/ninjarmm/oauth/callback', methods=['GET'])
 def ninjarmm_oauth_callback():
     """Handle OAuth callback - exchange authorization code for tokens."""
+    rate_err = _rate_limit('ninja_oauth_callback')
+    if rate_err:
+        return rate_err
+
     code = request.args.get('code')
     state = request.args.get('state')
+
     error = request.args.get('error')
     error_description = request.args.get('error_description', '')
 
@@ -2150,7 +2327,12 @@ def ninjarmm_oauth_callback():
 @app.route('/ninjarmm/oauth/status', methods=['GET'])
 def ninjarmm_oauth_status():
     """Check the current NinjaRMM OAuth connection status."""
+    rate_err = _rate_limit('ninja_oauth_status')
+    if rate_err:
+        return rate_err
+
     now = time.time()
+
 
     connected = bool(
         _NINJA_TOKEN_CACHE.get('access_token')
@@ -2183,10 +2365,15 @@ def ninjarmm_oauth_disconnect():
 @app.route('/ninjarmm/organizations', methods=['GET'])
 def get_ninjarmm_organizations():
     """Fetch list of organizations from NinjaRMM API."""
+    rate_err = _rate_limit('ninja_orgs')
+    if rate_err:
+        return rate_err
+
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
 
     try:
         headers, auth = _get_ninja_auth(api_url)
+
         response = requests.get(
             f'{api_url}/v2/organizations',
             headers=headers,
@@ -2212,12 +2399,16 @@ def get_ninjarmm_organizations():
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'NinjaRMM API connection error: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Server error'}), 500
 
 
 @app.route('/ninjarmm/devices', methods=['GET'])
 def get_ninjarmm_devices():
     """Fetch device names from NinjaRMM API."""
+    rate_err = _rate_limit('ninja_devices')
+    if rate_err:
+        return rate_err
+
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
     org_id = request.args.get('org_id')
     if org_id in [None, '', 'all', 'null', 'undefined']:
@@ -2225,6 +2416,7 @@ def get_ninjarmm_devices():
 
     try:
         headers, auth = _get_ninja_auth(api_url)
+
 
         devices = []
         page_num = 0
@@ -2278,15 +2470,20 @@ def get_ninjarmm_devices():
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'NinjaRMM API connection error: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Server error'}), 500
 
 
 @app.route('/ninjarmm/upload', methods=['POST'])
 def upload_ninjarmm_data():
     """Create a virtual file from NinjaRMM device data."""
+    rate_err = _rate_limit('ninja_upload')
+    if rate_err:
+        return rate_err
+
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err
+
 
     # Log session cookie details for debugging
     session_cookie_present = 'session' in request.cookies
@@ -2330,7 +2527,9 @@ def upload_ninjarmm_data():
 
             # Generate unique filename
             unique_id = str(uuid.uuid4())
-            filename = f'ninjarmm_devices_{unique_id}.xlsx'
+            prefix = app.config.get('UPLOAD_INSTANCE_PREFIX', '')
+            filename = f'{prefix}_ninjarmm_devices_{unique_id}.xlsx' if prefix else f'ninjarmm_devices_{unique_id}.xlsx'
+
             filepath = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
             # Save to Excel
@@ -2369,7 +2568,7 @@ def upload_ninjarmm_data():
 
     except Exception as e:
         logger.error('NinjaRMM upload error: %s', str(e), exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Server error'}), 500
     finally:
         _release_upload_lock(lock_key)
 
@@ -2377,11 +2576,16 @@ def upload_ninjarmm_data():
 @app.route('/clients/unified', methods=['GET'])
 def get_unified_clients():
     """Fetch and match clients from both SentinelOne and NinjaRMM APIs."""
+    rate_err = _rate_limit('unified_clients')
+    if rate_err:
+        return rate_err
+
     s1_url = os.getenv('SENTINELONE_API_URL')
     s1_token = os.getenv('SENTINELONE_API_TOKEN')
     ninja_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
     ninja_client_id = os.getenv('NINJARMM_CLIENT_ID')
     ninja_client_secret = os.getenv('NINJARMM_CLIENT_SECRET')
+
     
     s1_available = bool(s1_url and s1_token)
     ninja_available = bool(ninja_client_id and ninja_client_secret)
@@ -2492,10 +2696,15 @@ def get_unified_clients():
 @app.route('/ninjarmm/scripts', methods=['GET'])
 def get_ninjarmm_scripts():
     """Fetch available scripts from NinjaRMM API."""
+    rate_err = _rate_limit('ninja_scripts')
+    if rate_err:
+        return rate_err
+
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
 
     try:
         headers, auth = _get_ninja_auth(api_url)
+
 
         possible_endpoints = [
             f'{api_url}/v2/automation/scripts',
@@ -2538,15 +2747,20 @@ def get_ninjarmm_scripts():
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'NinjaRMM API connection error: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Server error'}), 500
 
 
 @app.route('/ninjarmm/run-script', methods=['POST'])
 def run_ninjarmm_script():
     """Trigger a script to run on a specific NinjaRMM device."""
+    rate_err = _rate_limit('ninja_run_script', limit=20, window_seconds=60)
+    if rate_err:
+        return rate_err
+
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err
+
 
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
 
@@ -2580,21 +2794,35 @@ def run_ninjarmm_script():
     else:
         return jsonify({'error': 'parameters must be an object or string'}), 400
 
-    allowed = os.getenv('NINJARMM_ALLOWED_SCRIPT_IDS', '').strip()
-    if allowed:
-        try:
-            allowed_ids = {int(x) for x in re.split(r'[\s,]+', allowed) if x}
-        except Exception:
-            return jsonify({'error': 'Server allowlist is misconfigured'}), 500
-        if script_id not in allowed_ids:
-            return jsonify({'error': 'Script not allowed'}), 403
+    try:
+        headers, auth = _get_ninja_auth(api_url)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+    allowed_err = _ensure_ninja_script_allowed(api_url, headers, auth, script_id, device_id=device_id)
+    if allowed_err:
+        return allowed_err
+
+    try:
+        org_id = int(data.get('org_id')) if data.get('org_id') not in (None, '') else None
+    except Exception:
+        return jsonify({'error': 'org_id must be an integer'}), 400
+
+    if org_id:
+        device_data = _get_ninja_device(api_url, headers, auth, device_id)
+        if not device_data:
+            return jsonify({'error': 'Device not found'}), 404
+        device_org = device_data.get('organizationId') or device_data.get('orgId')
+        if device_org is None:
+            return jsonify({'error': 'Device organization not available'}), 403
+        if str(device_org) != str(org_id):
+            return jsonify({'error': 'Device not in selected organization'}), 403
 
     logger.info("Triggering NinjaRMM script_id=%s device_id=%s from=%s", script_id, device_id, request.remote_addr)
 
     try:
-        headers, auth = _get_ninja_auth(api_url)
-
         require_online = os.getenv('NINJARMM_REQUIRE_DEVICE_ONLINE', '1') in ('1', 'true', 'True')
+
         if require_online:
             try:
                 max_age = int(os.getenv('NINJARMM_ONLINE_MAX_AGE_SECONDS', '300'))
@@ -2701,7 +2929,7 @@ def run_ninjarmm_script():
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'NinjaRMM API connection error: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Server error'}), 500
 
 
 def _save_ad_inventory_to_excel(parsed_data, client, days, clean_client, org_id=None, device_id=None, client_id=None):
@@ -2733,8 +2961,10 @@ def _save_ad_inventory_to_excel(parsed_data, client, days, clean_client, org_id=
 
     if not _data_db_enabled():
         uploads_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
-        filename = f'ad_computers_{uuid.uuid4().hex}.xlsx'
+        prefix = app.config.get('UPLOAD_INSTANCE_PREFIX', '')
+        filename = f'{prefix}_ad_computers_{uuid.uuid4().hex}.xlsx' if prefix else f'ad_computers_{uuid.uuid4().hex}.xlsx'
         filepath = os.path.join(uploads_root, filename)
+
 
         df = pd.DataFrame({_AD_COLUMN_NAME: names})
         df.to_excel(filepath, index=False, engine='openpyxl')
@@ -2786,9 +3016,14 @@ def _attach_ad_entry(entry, file_id, client_id):
 @app.route('/ad/trigger', methods=['POST'])
 def trigger_ad_inventory():
     """Trigger a NinjaRMM script to inventory Active Directory computers, then pull results from a custom field."""
+    rate_err = _rate_limit('ad_trigger', limit=20, window_seconds=60)
+    if rate_err:
+        return rate_err
+
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err
+
 
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict):
@@ -2811,8 +3046,8 @@ def trigger_ad_inventory():
     except Exception:
         return jsonify({'error': 'days must be an integer'}), 400
 
-    if days not in (30, 60, 90):
-        return jsonify({'error': 'days must be one of: 30, 60, 90'}), 400
+    if days not in (0, 30, 60, 90):
+        return jsonify({'error': 'days must be one of: 0, 30, 60, 90'}), 400
 
     try:
         org_id = int(org_id)
@@ -3130,7 +3365,7 @@ def trigger_ad_inventory():
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'NinjaRMM API connection error: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Server error'}), 500
 
 
 
@@ -3138,8 +3373,13 @@ def trigger_ad_inventory():
 @app.route('/ninjarmm/devices/all', methods=['GET'])
 def get_all_ninjarmm_devices():
     """Fetch all devices (for AD device picker) with minimal info, optionally filtered by org_id."""
+    rate_err = _rate_limit('ninja_devices_all')
+    if rate_err:
+        return rate_err
+
     api_url = os.getenv('NINJARMM_API_URL', 'https://api.ninjarmm.com')
     org_id = request.args.get('org_id')
+
     if org_id in [None, '', 'all', 'null', 'undefined']:
         org_id = None
 
@@ -3187,20 +3427,23 @@ def get_all_ninjarmm_devices():
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'NinjaRMM API connection error: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Server error'}), 500
 
 
 @app.route('/ad/intake', methods=['POST'])
 def ad_intake():
     """Receive AD computer inventory from a Ninja-run script."""
+    rate_err = _rate_limit('ad_intake', limit=30, window_seconds=60)
+    if rate_err:
+        return rate_err
+
     _prune_ad_intake_nonces()
 
     # Preferred: HMAC-signed intake using a one-time nonce.
     intake_nonce = request.headers.get('X-AD-Intake-Nonce')
     intake_sig = request.headers.get('X-AD-Intake-Signature')
 
-    # Legacy: bearer token (static env token).
-    provided = request.headers.get('X-AD-Intake-Token')
+
 
     raw_body = request.get_data(cache=True) or b''
     payload = request.get_json(silent=True) or {}
@@ -3219,28 +3462,24 @@ def ad_intake():
     except Exception:
         return jsonify({'error': 'days must be an integer'}), 400
 
-    if days not in (30, 60, 90):
-        return jsonify({'error': 'days must be one of: 30, 60, 90'}), 400
+    if days not in (0, 30, 60, 90):
+        return jsonify({'error': 'days must be one of: 0, 30, 60, 90'}), 400
 
-    # Auth: if HMAC headers are present, validate signature using the per-request signing key.
-    if intake_nonce and intake_sig:
-        entry = _AD_INTAKE_NONCES.get(intake_nonce)
-        if not entry or entry.get('client') != client or int(entry.get('days') or 0) != days or entry.get('expires_at', 0) <= time.time():
-            return jsonify({'error': 'Unauthorized'}), 401
+    # Auth: require HMAC headers and validate signature using the per-request signing key.
+    if not intake_nonce or not intake_sig:
+        return jsonify({'error': 'Unauthorized'}), 401
 
-        signing_key = entry.get('signing_key') or ''
-        expected = hmac.new(signing_key.encode('utf-8'), raw_body, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(expected, str(intake_sig).strip()):
-            return jsonify({'error': 'Unauthorized'}), 401
+    entry = _AD_INTAKE_NONCES.get(intake_nonce)
+    if not entry or entry.get('client') != client or int(entry.get('days') or 0) != days or entry.get('expires_at', 0) <= time.time():
+        return jsonify({'error': 'Unauthorized'}), 401
 
-        _AD_INTAKE_NONCES.pop(intake_nonce, None)
+    signing_key = entry.get('signing_key') or ''
+    expected = hmac.new(signing_key.encode('utf-8'), raw_body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, str(intake_sig).strip()):
+        return jsonify({'error': 'Unauthorized'}), 401
 
-    else:
-        # Legacy bearer token (manual/legacy use)
-        current = os.getenv('AD_INTAKE_TOKEN_CURRENT')
-        previous = os.getenv('AD_INTAKE_TOKEN_PREVIOUS')
-        if not provided or provided not in {t for t in (current, previous) if t}:
-            return jsonify({'error': 'Unauthorized'}), 401
+    _AD_INTAKE_NONCES.pop(intake_nonce, None)
+
 
     if not isinstance(items, list):
         return jsonify({'error': 'workstations must be a list'}), 400
@@ -3289,9 +3528,14 @@ def ad_intake():
 @app.route('/ad/sync', methods=['POST'])
 def sync_ad_inventory():
     """Manually sync AD inventory data from Ninja custom fields without triggering a new script."""
+    rate_err = _rate_limit('ad_sync', limit=30, window_seconds=60)
+    if rate_err:
+        return rate_err
+
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err
+
 
     data = request.get_json(silent=True) or {}
     client = data.get('client')
@@ -3363,7 +3607,7 @@ def sync_ad_inventory():
 
     except Exception as e:
         logger.error('AD sync failed: %s', str(e), exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Server error'}), 500
 
 
 @app.route('/ad/debug/inspect-field', methods=['POST'])
@@ -3416,7 +3660,7 @@ def inspect_ninja_field():
             return jsonify({'success': True, 'found': True, 'raw': value, 'parsed': None, 'parse_error': str(e)})
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Server error'}), 500
 
 
 @app.route('/ad/debug/list-fields', methods=['POST'])
@@ -3447,30 +3691,18 @@ def list_ninja_fields():
         return jsonify({'success': True, 'fields': fields})
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Server error'}), 500
 
-
-@app.route('/ad/tokens/generate', methods=['POST'])
-def ad_generate_intake_token():
-    """Generate a new AD intake token for rotation.
-
-    Note: this does not persist changes to environment variables; it returns a suggested token
-    that you should set as AD_INTAKE_TOKEN_CURRENT (and move the previous current to PREVIOUS).
-    """
-    if os.getenv('ENABLE_BASIC_AUTH', '0') not in ('1', 'true', 'True'):
-        return jsonify({'error': 'Not available unless Basic Auth is enabled'}), 403
-
-    csrf_err = _require_csrf()
-    if csrf_err:
-        return csrf_err
-
-    token = secrets.token_hex(32)
-    return jsonify({'success': True, 'token': token})
 
 
 @app.route('/ad/status', methods=['GET'])
 def ad_status():
+    rate_err = _rate_limit('ad_status')
+    if rate_err:
+        return rate_err
+
     client = (request.args.get('client') or '').strip()
+
     try:
         days = int(request.args.get('days') or 30)
     except Exception:
@@ -3497,9 +3729,14 @@ def ad_status():
 @app.route('/ad/attach', methods=['POST'])
 def ad_attach():
     """Attach a previously received AD snapshot to the current session as file_id=3."""
+    rate_err = _rate_limit('ad_attach', limit=30, window_seconds=60)
+    if rate_err:
+        return rate_err
+
     csrf_err = _require_csrf()
     if csrf_err:
         return csrf_err
+
 
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict):
@@ -3578,7 +3815,8 @@ def cleanup():
     data can be missing; we treat that case as a no-op for session cleanup.
     """
     csrf_err = _require_csrf()
-    csrf_ok = not bool(csrf_err)
+    if csrf_err:
+        return jsonify({'success': True, 'skipped': True, 'reason': 'csrf'}), 200
 
     uploads_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
 
@@ -3587,7 +3825,7 @@ def cleanup():
     # This prevents premature deletion when browsers trigger pagehide unexpectedly
     # Note: We no longer clear session files here to prevent premature loss of references
     # during transient browser events like pagehide. Disk cleanup still occurs below.
-    # if csrf_ok and 'files' in session:
+    # if 'files' in session:
     #     session.pop('files', None)
 
     retention_seconds = _get_upload_retention_seconds()
@@ -3610,9 +3848,11 @@ def cleanup():
             try:
                 age_seconds = now - os.path.getmtime(path)
                 if age_seconds >= retention_seconds and path not in referenced_paths:
-                    os.remove(path)
+                    if _should_prune_upload(path):
+                        os.remove(path)
             except Exception:
                 pass
+
     except Exception:
         pass
 

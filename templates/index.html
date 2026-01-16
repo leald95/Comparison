@@ -343,11 +343,31 @@
         .source-summary-header {
             display: flex;
             align-items: center;
+            justify-content: center;
             gap: 0.75rem;
             margin-bottom: 1rem;
             font-weight: 600;
             font-size: 1.1rem;
+            min-height: 80px;
         }
+
+        .source-summary-header .source-icon-img {
+            width: 56px;
+            height: auto;
+            max-height: 70px;
+            object-fit: contain;
+        }
+
+        .source-summary-header .source-icon-img.s1-icon {
+            width: 120px;
+            max-height: 70px;
+        }
+
+        .source-summary-header .source-icon-img.ninja-icon {
+            width: 100px;
+            max-height: 70px;
+        }
+
 
         .source-summary-count {
             color: var(--text-secondary);
@@ -525,6 +545,14 @@
             animation: fadeInUp 0.5s ease-out;
         }
 
+        .results-client-name {
+            text-align: center;
+            color: var(--text-secondary);
+            margin: 0.25rem 0 1.25rem;
+            font-size: 1rem;
+        }
+
+
         .new-comparison-btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
@@ -601,6 +629,11 @@
             padding: 0.5rem;
             border-radius: 14px;
             border: 1px solid var(--border-subtle);
+        }
+
+        .tabs.tabs-single .tab-btn.active {
+            background: transparent;
+            color: var(--text-secondary);
         }
 
         .tab-btn {
@@ -857,13 +890,17 @@
         }
 
         .export-btn-container {
-            text-align: center;
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            flex-wrap: wrap;
             margin-bottom: 2rem;
         }
 
         /* Data Sources Info with Refresh Buttons */
         .data-sources-info {
             display: flex;
+            justify-content: center;
             gap: 1.5rem;
             margin-bottom: 2rem;
             padding: 0 1rem;
@@ -931,6 +968,24 @@
             align-items: center;
             gap: 0.5rem;
             white-space: nowrap;
+            min-height: 48px;
+        }
+
+        .refresh-data-btn .source-icon-img {
+            height: 24px;
+            width: auto;
+            max-width: 80px;
+            object-fit: contain;
+        }
+
+        .refresh-data-btn .source-icon-img.s1-icon {
+            height: 24px;
+            width: auto;
+        }
+
+        .refresh-data-btn .source-icon-img.ninja-icon {
+            height: 24px;
+            width: auto;
         }
 
         .refresh-data-btn:hover:not(:disabled) {
@@ -1467,6 +1522,46 @@
             font-size: 1.1rem;
         }
 
+        .client-status-icons img {
+            width: 36px;
+            height: 36px;
+            margin-right: 0.25rem;
+            vertical-align: middle;
+        }
+
+        .client-status-icons img.s1-icon {
+            width: 63px;
+            height: 63px;
+        }
+
+        .client-status-icons img.ninja-icon {
+            width: 45px;
+            height: 45px;
+        }
+
+        .source-icon {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .source-icon-img {
+            width: 40px;
+            height: 40px;
+            object-fit: contain;
+            vertical-align: middle;
+        }
+
+        .source-icon-img.s1-icon {
+            width: 70px;
+            height: 70px;
+        }
+
+        .source-icon-img.ninja-icon {
+            width: 50px;
+            height: 50px;
+        }
+
+
         .unified-stats {
             display: flex;
             gap: 1rem;
@@ -1531,17 +1626,20 @@
             background: var(--text-muted);
         }
 
-        /* Testing View Table */
-        .testing-view-container {
+        /* Comparison View Table */
+        .comparison-view-container {
             padding: 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
         }
 
-        .testing-search-wrapper {
+        .comparison-search-wrapper {
             margin-bottom: 1.5rem;
             position: relative;
         }
 
-        .testing-search {
+        .comparison-search {
             width: 100%;
             background: var(--bg-deep);
             border: 1px solid var(--border-subtle);
@@ -1552,13 +1650,13 @@
             transition: all 0.2s;
         }
 
-        .testing-search:focus {
+        .comparison-search:focus {
             outline: none;
             border-color: var(--accent-blue);
             box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
         }
 
-        .testing-search-icon {
+        .comparison-search-icon {
             position: absolute;
             left: 1rem;
             top: 50%;
@@ -1567,7 +1665,30 @@
             font-size: 1rem;
         }
 
-        .testing-table-wrapper {
+        .comparison-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem 1.25rem;
+            margin-bottom: 1.25rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .comparison-filters label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .comparison-filters input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent-cyan);
+        }
+
+        }
+
+        .comparison-table-wrapper {
             max-height: 600px;
             overflow-y: auto;
             border: 1px solid var(--border-subtle);
@@ -1575,12 +1696,12 @@
             background: var(--bg-card);
         }
 
-        .testing-table {
+        .comparison-table {
             width: 100%;
             border-collapse: collapse;
         }
 
-        .testing-table th {
+        .comparison-table th {
             position: sticky;
             top: 0;
             background: var(--bg-deep);
@@ -1597,29 +1718,29 @@
             transition: all 0.2s;
         }
 
-        .testing-table th:hover {
+        .comparison-table th:hover {
             background: rgba(255, 255, 255, 0.05);
             color: white;
         }
 
-        .testing-table th::after {
+        .comparison-table th::after {
             content: '↕️';
             margin-left: 0.5rem;
             font-size: 0.7rem;
             opacity: 0.3;
         }
 
-        .testing-table th.sort-asc::after {
+        .comparison-table th.sort-asc::after {
             content: '🔼';
             opacity: 1;
         }
 
-        .testing-table th.sort-desc::after {
+        .comparison-table th.sort-desc::after {
             content: '🔽';
             opacity: 1;
         }
 
-        .testing-table td {
+        .comparison-table td {
             padding: 1rem;
             border-bottom: 1px solid var(--border-subtle);
             color: var(--text-primary);
@@ -1627,7 +1748,7 @@
             font-size: 0.9rem;
         }
 
-        .testing-table tr:hover td {
+        .comparison-table tr:hover td {
             background: rgba(255, 255, 255, 0.02);
         }
 
@@ -1654,6 +1775,28 @@
         .status-offline {
             background: rgba(245, 158, 11, 0.1);
             color: #fbbf24;
+        }
+
+        .last-contact {
+            margin-top: 0.35rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .last-contact.debug {
+            opacity: 0.8;
+        }
+
+        .status-remove {
+            background: rgba(244, 63, 94, 0.12);
+            color: #fb7185;
+        }
+
+        .remediation-cell {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            align-items: flex-start;
         }
 
         .device-link-icon {
@@ -1727,15 +1870,15 @@
             background: rgba(255, 255, 255, 0.1);
         }
 
-        /* Testing View Grouping */
-        .testing-device-group {
+        /* Comparison View Grouping */
+        .comparison-device-group {
             display: flex;
             flex-direction: column;
             gap: 0.25rem;
             padding: 0.25rem 0;
         }
 
-        .testing-device-sub {
+        .comparison-device-sub {
             display: flex;
             align-items: center;
             font-family: monospace;
@@ -1891,6 +2034,21 @@
             font-size: 0.85rem;
             line-height: 1.5;
         }
+
+        .settings-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin-top: 0.75rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .settings-toggle input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent-cyan);
+        }
     </style>
 </head>
 
@@ -1900,8 +2058,7 @@
 
     <div class="container">
         <header>
-            <div class="logo" id="logo-button" style="cursor: pointer;"
-                title="Return to Client Selection">
+            <div class="logo" id="logo-button" style="cursor: pointer;" title="Return to Client Selection">
                 <div class="logo-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="32" height="32">
                         <path d="M 18 28 L 22 36 L 14 36 Z" fill="currentColor" />
@@ -1943,6 +2100,7 @@
                     🏠 Back to Client Selection
                 </button>
             </div>
+            <div class="results-client-name" id="results-client-name" style="display: none;"></div>
 
             <div class="stats-grid" id="stats-grid">
                 <!-- Stats will be inserted here -->
@@ -1951,11 +2109,9 @@
             <!-- Refresh Buttons (counts are shown in the button text) -->
             <div class="data-sources-info" id="data-sources-info" style="display: none;">
                 <button type="button" class="refresh-data-btn" id="refresh-data-1" title="Re-fetch data from API">
-                    <span class="refresh-icon">🔄</span>
                     <span class="refresh-text" id="refresh-text-1">Refresh</span>
                 </button>
                 <button type="button" class="refresh-data-btn" id="refresh-data-2" title="Re-fetch data from API">
-                    <span class="refresh-icon">🔄</span>
                     <span class="refresh-text" id="refresh-text-2">Refresh</span>
                 </button>
             </div>
@@ -1989,12 +2145,15 @@
 
             <div class="export-btn-container">
                 <button type="button" class="export-btn" id="export-btn">
-                    <span>📥 Export to HTML</span>
+                    <span>🧾 Export to HTML</span>
+                </button>
+                <button type="button" class="export-btn" id="export-csv-btn">
+                    <span>📄 Export to CSV</span>
                 </button>
             </div>
 
             <div class="tabs">
-                <button class="tab-btn active" data-tab="only-file1">
+                <button class="tab-btn" data-tab="only-file1">
                     Only in File 1
                     <span class="tab-count" id="tab-count-file1">0</span>
                 </button>
@@ -2014,12 +2173,12 @@
                     🧩 Only in AD
                     <span class="tab-count" id="tab-count-ad">0</span>
                 </button>
-                <button class="tab-btn" data-tab="testing-view">
-                    🧪 Testing View
+                <button class="tab-btn active" data-tab="comparison-view">
+                    Verification View
                 </button>
             </div>
 
-            <div class="tab-content active" id="tab-only-file1">
+            <div class="tab-content" id="tab-only-file1">
                 <div class="data-table-container">
                     <div class="value-list" id="only-file1-list"></div>
                 </div>
@@ -2059,25 +2218,31 @@
                 </div>
             </div>
 
-            <div class="tab-content" id="tab-testing-view">
-                <div class="testing-view-container">
-                    <div class="testing-search-wrapper">
-                        <span class="testing-search-icon">🔍</span>
-                        <input type="text" class="testing-search" id="testing-search"
-                            placeholder="Search devices in testing view...">
+            <div class="tab-content active" id="tab-comparison-view">
+                <div class="comparison-view-container">
+                    <div class="comparison-search-wrapper">
+                        <span class="comparison-search-icon">🔍</span>
+                        <input type="text" class="comparison-search" id="comparison-search"
+                            placeholder="Search devices in verification view...">
                     </div>
-                    <div class="testing-table-wrapper">
-                        <table class="testing-table">
+                    <div class="comparison-filters">
+                        <label><input type="checkbox" id="filter-show-found"> Found</label>
+                        <label><input type="checkbox" id="filter-show-offline"> Offline</label>
+                        <label><input type="checkbox" id="filter-show-missing"> Missing</label>
+                        <label><input type="checkbox" id="filter-show-recommend"> Recommend removal</label>
+                    </div>
+                    <div class="comparison-table-wrapper">
+                        <table class="comparison-table">
                             <thead>
                                 <tr>
-                                    <th data-sort="name" id="testing-header-name">Device Name</th>
-                                    <th data-sort="file1" id="testing-header-file1">Source 1 Status</th>
-                                    <th data-sort="file2" id="testing-header-file2">Source 2 Status</th>
-                                    <th data-sort="inAd" id="testing-header-ad" style="display: none;">In AD</th>
-                                    <th>Remediation</th>
+                                    <th data-sort="name" id="comparison-header-name">Device Name</th>
+                                    <th data-sort="file1" id="comparison-header-file1">Source 1 Status</th>
+                                    <th data-sort="file2" id="comparison-header-file2">Source 2 Status</th>
+                                    <th data-sort="inAd" id="comparison-header-ad" style="display: none;">In AD</th>
+                                    <th data-sort="remediation" id="comparison-header-remediation">Remediation</th>
                                 </tr>
                             </thead>
-                            <tbody id="testing-table-body">
+                            <tbody id="comparison-table-body">
                                 <!-- Devices will be inserted here -->
                             </tbody>
                         </table>
@@ -2089,7 +2254,7 @@
             <div class="offline-section collapsed" id="offline-section" style="display: none;">
                 <div class="offline-header" id="offline-header">
                     <span class="offline-icon">⚠️</span>
-                    <span class="offline-title" id="offline-section-title">Devices Offline > 30 Days</span>
+                    <span class="offline-title" id="offline-section-title">Devices Offline > 14 Days</span>
                     <span class="offline-toggle" id="offline-toggle">▼</span>
                 </div>
                 <div class="offline-content" id="offline-content">
@@ -2114,10 +2279,6 @@
                     <button type="button" class="select-client-main-btn" id="select-client-main-btn">
                         <span class="btn-text">Choose Client</span>
                     </button>
-                    <label class="refresh-toggle">
-                        <input type="checkbox" id="force-refresh-toggle">
-                        Force refresh (ignore cache)
-                    </label>
                 </div>
 
                 <div class="selected-client-display" id="selected-client-display" style="display: none;">
@@ -2160,15 +2321,15 @@
                     <div class="sources-summary" id="sources-summary" style="display: none;">
                         <div class="source-summary-card" id="source-card-s1" data-source="s1">
                             <div class="source-summary-header">
-                                <span class="source-icon">🛡️</span>
-                                <span class="source-name">SentinelOne</span>
+                                <span class="source-icon"><img class="source-icon-img s1-icon"
+                                        src="/static/sentinelone-logo.svg" alt="SentinelOne"></span>
                             </div>
                             <div class="source-summary-count" id="s1-count">0 endpoints</div>
                         </div>
                         <div class="source-summary-card" id="source-card-ninja" data-source="ninja">
                             <div class="source-summary-header">
-                                <span class="source-icon">🥷</span>
-                                <span class="source-name">NinjaRMM</span>
+                                <span class="source-icon"><img class="source-icon-img ninja-icon"
+                                        src="/static/ninjaone-logo.svg" alt="NinjaRMM"></span>
                             </div>
                             <div class="source-summary-count" id="ninja-count">0 devices</div>
                         </div>
@@ -2217,7 +2378,9 @@
                                 style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted); text-align: left;">
                                 Select the device with AD query capability (DC with RSAT/AD module)
                             </div>
-                            <div id="ad-device-status" style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted); text-align: left;"></div>
+                            <div id="ad-device-status"
+                                style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted); text-align: left;">
+                            </div>
                         </div>
 
                         <div style="display:flex; gap:0.75rem; justify-content:center; flex-wrap:wrap;">
@@ -2247,7 +2410,8 @@
                 <button type="button" class="modal-close" id="unified-client-modal-close">✕</button>
             </div>
             <div style="padding: 0 2rem 1rem 2rem;">
-                <input type="text" id="client-search-input" class="client-search-input" placeholder="🔍 Search clients..."
+                <input type="text" id="client-search-input" class="client-search-input"
+                    placeholder="🔍 Search clients..."
                     style="width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-deep); color: var(--text-primary); font-size: 0.95rem; font-family: 'Outfit', sans-serif; outline: none; transition: all 0.2s ease;">
             </div>
             <div id="unified-client-modal-content">
@@ -2291,8 +2455,8 @@
                     <div class="settings-select-wrapper">
                         <select id="offline-days-select" class="settings-select">
                             <option value="7">7 days</option>
-                            <option value="14">14 days</option>
-                            <option value="30" selected>30 days (default)</option>
+                            <option value="14" selected>14 days (default)</option>
+                            <option value="30">30 days</option>
                             <option value="60">60 days</option>
                             <option value="90">90 days</option>
                         </select>
@@ -2301,6 +2465,28 @@
                         💡 <strong>Tip:</strong> Devices that haven't contacted their respective service in more than
                         the specified days will be flagged as offline in the comparison results.
                     </div>
+
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-section-title">
+                        ⚙️ Preferences
+                    </div>
+                    <div class="settings-section-desc">
+                        Control optional views and data refresh behavior.
+                    </div>
+                    <label class="settings-toggle">
+                        <input type="checkbox" id="show-all-views-toggle">
+                        Show other views
+                    </label>
+                    <label class="settings-toggle">
+                        <input type="checkbox" id="force-refresh-toggle">
+                        Force refresh on client selection
+                    </label>
+                    <label class="settings-toggle">
+                        <input type="checkbox" id="debug-last-contact-toggle">
+                        Show Ninja last contact debug
+                    </label>
                 </div>
 
                 <div class="settings-section">
@@ -2332,12 +2518,13 @@
                     </div>
                     <div class="settings-section-desc">
                         Configure the NinjaRMM script/device used to query Active Directory and send back a list of
-                        computers active within the last 30/60/90 days.
+                        computers active within the last 30/60/90 days (or all time).
                     </div>
 
                     <div class="settings-select-wrapper">
                         <select id="ad-days-select" class="settings-select">
-                            <option value="30" selected>30 days</option>
+                            <option value="0" selected>All time</option>
+                            <option value="30">30 days</option>
                             <option value="60">60 days</option>
                             <option value="90">90 days</option>
                         </select>
@@ -2355,12 +2542,7 @@
                         </select>
                     </div>
 
-                    <div class="settings-select-wrapper" style="margin-top: 0.75rem; display:flex; gap:0.5rem;">
-                        <button type="button" class="history-btn" id="ad-generate-token-btn">Generate intake
-                            token</button>
-                        <input id="ad-generated-token" class="settings-select" type="text" readonly
-                            placeholder="Token will appear here (copy to .env)" />
-                    </div>
+
 
                     <div class="settings-warning">
                         ⚠️ <strong>Note:</strong> The selected device must have AD query capability (e.g., DC with
@@ -2456,9 +2638,10 @@
             const targetUrl = (typeof url === 'string') ? url : (url && url.url ? url.url : '');
             const isSameOrigin = targetUrl.startsWith('/') || targetUrl.startsWith(window.location.origin);
 
-            if (csrfToken && isSameOrigin && method === 'POST') {
+            if (csrfToken && isSameOrigin && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
                 options.headers = { ...(options.headers || {}), 'X-CSRF-Token': csrfToken };
             }
+
             return _origFetch(url, options);
         };
 
@@ -2470,11 +2653,11 @@
             file1: { fileId: '1', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, sourceConfig: null, offlineDevices: [] },
             file2: { fileId: '2', uploaded: false, sheet: null, column: null, filename: null, sourceType: null, sourceConfig: null, offlineDevices: [] },
             primarySources: null, // snapshot of the main S1 vs Ninja sources
-            ad: { attached: false, days: 30, scriptId: null, deviceId: null, count: 0, receivedAt: null },
+            ad: { attached: false, days: 0, scriptId: null, deviceId: null, count: 0, receivedAt: null },
             adSource: null,
             currentFileIdForS1: null,
             forceRefreshOnSelect: false,
-            testingViewSort: { field: 'name', direction: 'asc' },
+            comparisonViewSort: { field: 'name', direction: 'asc' },
             clientName: null,
             currentNinjaOrgId: null,  // Track current org_id for device picker filtering
             lastHistorySave: null,  // Track last save timestamp to prevent duplicates
@@ -2483,15 +2666,15 @@
             availableScripts: [],  // Available NinjaRMM scripts
             ninjaDevices: [],  // Store NinjaRMM devices with IDs for remediation
             allNinjaDevices: [],  // All devices (for AD picker)
-            offlineDaysThreshold: 30,  // Default offline threshold in days
-            clientId: (function () {
-                let id = localStorage.getItem('comparisonClientId');
-                if (!id) {
-                    id = 'client_' + Math.random().toString(36).substr(2, 9);
-                    localStorage.setItem('comparisonClientId', id);
-                }
-                return id;
-            })(),
+            offlineDaysThreshold: 14,  // Default offline threshold in days
+
+            showAllViews: false,
+            debugLastContact: false,
+            viewFilters: { found: true, offline: true, missing: true, recommend: true },
+            s1EndpointsByFile: {},
+            remediationLog: {},
+            clientId: localStorage.getItem('comparisonClientId') || '',
+
             selectedSources: { s1: false, ninja: false, ad: false }  // Track which sources user wants to compare
         };
 
@@ -2505,10 +2688,15 @@
                 });
                 const data = await response.json();
                 if (!data.success) return null;
+                if (data.client_id && data.client_id !== state.clientId) {
+                    state.clientId = data.client_id;
+                    localStorage.setItem('comparisonClientId', data.client_id);
+                }
                 if (data.removed && data.removed.length) {
                     showToast('Some sources expired. Please reload sources.', 'error');
                 }
                 return data;
+
             } catch (err) {
                 console.warn('Session sync failed:', err);
                 return null;
@@ -2756,10 +2944,11 @@
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
             toast.style.cursor = onClick ? 'pointer' : 'default';
-            toast.innerHTML = `
-                <span>${type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️'}</span>
-                <span>${message}</span>
-            `;
+            const icon = document.createElement('span');
+            icon.textContent = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            const msg = document.createElement('span');
+            msg.textContent = String(message ?? '');
+            toast.append(icon, msg);
 
             if (onClick) {
                 toast.addEventListener('click', () => {
@@ -2865,6 +3054,21 @@
             return `${Math.floor(diffDays / 365)} years ago`;
         }
 
+        function normalizeDeviceName(name) {
+            if (!name) return '';
+            let value = String(name).toLowerCase();
+            const suffixes = ['.local', '.lan', '.home', '.internal', '.localdomain', '.domain'];
+            for (const suffix of suffixes) {
+                if (value.endsWith(suffix)) {
+                    value = value.slice(0, -suffix.length);
+                    break;
+                }
+            }
+            value = value.replace(/['"`’‘]/g, '');
+            value = value.replace(/[.\-_\\s]/g, '');
+            return value.trim();
+        }
+
         function renderOfflineDevices() {
             const offlineSection = document.getElementById('offline-section');
             const offlineSectionTitle = document.getElementById('offline-section-title');
@@ -2893,9 +3097,10 @@
             if (offline1.length > 0) {
                 source1Container.innerHTML = `
                     <div class="offline-source-header">
-                        <span>${source1Name === 'SentinelOne' ? '🛡️' : '🥷'} ${source1Name}</span>
+                        <span>${source1Name === 'SentinelOne' ? '<img class="source-icon-img s1-icon" src="/static/sentinelone-logo.svg" alt="SentinelOne">' : '<img class="source-icon-img ninja-icon" src="/static/ninjaone-logo.svg" alt="NinjaRMM">'}</span>
                         <span class="offline-source-count">${offline1.length}</span>
                     </div>
+
                     <div class="offline-device-list">
                         ${offline1.map(dev => `
                             <div class="offline-device-item">
@@ -2913,9 +3118,10 @@
             if (offline2.length > 0) {
                 source2Container.innerHTML = `
                     <div class="offline-source-header">
-                        <span>${source2Name === 'SentinelOne' ? '🛡️' : '🥷'} ${source2Name}</span>
+                        <span>${source2Name === 'SentinelOne' ? '<img class="source-icon-img s1-icon" src="/static/sentinelone-logo.svg" alt="SentinelOne">' : '<img class="source-icon-img ninja-icon" src="/static/ninjaone-logo.svg" alt="NinjaRMM">'}</span>
                         <span class="offline-source-count">${offline2.length}</span>
                     </div>
+
                     <div class="offline-device-list">
                         ${offline2.map(dev => `
                             <div class="offline-device-item">
@@ -2930,7 +3136,7 @@
             }
         }
 
-        function buildTestingExportRows(data) {
+        function buildComparisonExportRows(data) {
             const rows = [];
             const handledInPrefix = new Set();
             const devices = new Map();
@@ -2939,6 +3145,26 @@
             const offline2Map = new Map((state.file2.offlineDevices || []).map(d => [d.name, d.lastSeen]));
             const offline1 = new Set(offline1Map.keys());
             const offline2 = new Set(offline2Map.keys());
+
+            const ninjaDeviceMap = new Map((state.ninjaDevices || []).map(device => [device.name, device]));
+            const ninjaDeviceNormMap = new Map();
+            const ninjaDevicePrefixMap = new Map();
+            (state.ninjaDevices || []).forEach(device => {
+                const norm = normalizeDeviceName(device.name);
+                if (norm && !ninjaDeviceNormMap.has(norm)) {
+                    ninjaDeviceNormMap.set(norm, device);
+                }
+                if (norm && norm.length >= 10) {
+                    const maxLen = Math.min(15, norm.length);
+                    for (let plen = 10; plen <= maxLen; plen += 1) {
+                        const prefix = norm.slice(0, plen);
+                        if (!ninjaDevicePrefixMap.has(prefix)) {
+                            ninjaDevicePrefixMap.set(prefix, device);
+                        }
+                    }
+                }
+            });
+
 
             (data.prefix_matches || []).forEach(m => {
                 const key = `prefix_${m.file1}_${m.file2}`;
@@ -2983,7 +3209,32 @@
                     if (status === 'offline') entry.file2LastSeen = offline2Map.get(name) || '';
                 }
                 if (inAd !== null) entry.inAd = inAd ? 'yes' : 'no';
+
+                if (status === 'missing' && fileId === 2) {
+                    const lookupName = name;
+                    const lookupNorm = normalizeDeviceName(lookupName);
+                    let ninjaDevice = ninjaDeviceMap.get(lookupName);
+                    if (!ninjaDevice && lookupNorm) {
+                        ninjaDevice = ninjaDeviceNormMap.get(lookupNorm);
+                    }
+                    if (!ninjaDevice && lookupNorm && lookupNorm.length >= 10) {
+                        const maxLen = Math.min(15, lookupNorm.length);
+                        for (let plen = maxLen; plen >= 10; plen -= 1) {
+                            const prefix = lookupNorm.slice(0, plen);
+                            ninjaDevice = ninjaDevicePrefixMap.get(prefix);
+                            if (ninjaDevice) break;
+                        }
+                    }
+                    if (ninjaDevice) {
+                        entry.file2 = offline2.has(ninjaDevice.name) ? 'offline' : 'found';
+                        entry.rawFile2 = ninjaDevice.name;
+                        if (entry.file2 === 'offline') {
+                            entry.file2LastSeen = offline2Map.get(ninjaDevice.name) || '';
+                        }
+                    }
+                }
             };
+
 
             (data.results_common || []).forEach(item => {
                 setStatus(item.name, 1, offline1.has(item.name) ? 'offline' : 'found', item.in_ad);
@@ -3026,7 +3277,7 @@
 
             const offline1 = state.file1.offlineDevices || [];
             const offline2 = state.file2.offlineDevices || [];
-            const testingRows = buildTestingExportRows(data);
+            const comparisonRows = buildComparisonExportRows(data);
 
             const exportHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -3111,7 +3362,7 @@
   </div>
 
   <div class="section">
-    <h2>Testing View</h2>
+    <h2>Verification View</h2>
     <table>
       <thead>
         <tr>
@@ -3125,7 +3376,7 @@
         </tr>
       </thead>
       <tbody>
-        ${testingRows.map(row => `
+        ${comparisonRows.map(row => `
           <tr>
             <td>${escapeHtml(row.name)}</td>
             <td>${escapeHtml(row.file1)}</td>
@@ -3143,24 +3394,24 @@
   <div class="section">
     <h2>Raw Comparison Data (JSON)</h2>
     <pre>${escapeHtml(JSON.stringify({
-        generatedAt,
-        clientName: state.clientName,
-        displayName1,
-        displayName2,
-        file1: state.file1,
-        file2: state.file2,
-        ad: state.ad,
-        stats: data.stats,
-        results_common: data.results_common,
-        results_file1: data.results_file1,
-        results_file2: data.results_file2,
-        results_ad: data.results_ad,
-        only_in_file1: onlyInFile1,
-        only_in_file2: onlyInFile2,
-        in_both: inBoth,
-        prefix_matches: prefixMatches,
-        only_in_ad: onlyInAd
-    }, null, 2))}</pre>
+                generatedAt,
+                clientName: state.clientName,
+                displayName1,
+                displayName2,
+                file1: state.file1,
+                file2: state.file2,
+                ad: state.ad,
+                stats: data.stats,
+                results_common: data.results_common,
+                results_file1: data.results_file1,
+                results_file2: data.results_file2,
+                results_ad: data.results_ad,
+                only_in_file1: onlyInFile1,
+                only_in_file2: onlyInFile2,
+                in_both: inBoth,
+                prefix_matches: prefixMatches,
+                only_in_ad: onlyInAd
+            }, null, 2))}</pre>
   </div>
 </body>
 </html>`;
@@ -3173,6 +3424,160 @@
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function exportToCSV() {
+            const data = state.currentComparisonData;
+            if (!data) {
+                showToast('Run a comparison before exporting', 'error');
+                return;
+            }
+
+            const rows = buildComparisonExportRows(data);
+            const searchTerm = (document.getElementById('comparison-search').value || '').toLowerCase();
+
+            const getDaysSinceLastSeen = (lastSeenDate) => {
+                if (!lastSeenDate) return null;
+                const date = new Date(lastSeenDate);
+                if (Number.isNaN(date.getTime())) return null;
+                const now = new Date();
+                return Math.floor((now - date) / (1000 * 60 * 60 * 24));
+            };
+
+            const removalThresholdDays = 90;
+            const isOfflineLongEnough = (lastSeenDate) => {
+                const days = getDaysSinceLastSeen(lastSeenDate);
+                return days !== null && days >= removalThresholdDays;
+            };
+
+            const qualifiesForRemoval = (status, lastSeenDate) => {
+                if (status === 'missing') return true;
+                if (status === 'offline') return isOfflineLongEnough(lastSeenDate);
+                return false;
+            };
+
+            const filtered = rows.filter(row => {
+                if (searchTerm && !String(row.name || '').toLowerCase().includes(searchTerm)) {
+                    return false;
+                }
+
+                const tags = new Set();
+                if (row.file1 === 'missing' || row.file2 === 'missing') tags.add('missing');
+                if (row.file1 === 'offline' || row.file2 === 'offline') tags.add('offline');
+                if (row.file1 === 'found' && row.file2 === 'found') tags.add('found');
+
+                const recommendRemoval = (() => {
+                    const checks = [
+                        qualifiesForRemoval(row.file1, row.file1LastSeen),
+                        qualifiesForRemoval(row.file2, row.file2LastSeen)
+                    ];
+                    if (data.ad_attached) {
+                        checks.push(row.inAd === 'no');
+                    }
+                    return checks.length > 0 && checks.every(Boolean);
+                })();
+
+                if (recommendRemoval) tags.add('recommend');
+
+                const activeFilters = new Set();
+                if (state.viewFilters.found) activeFilters.add('found');
+                if (state.viewFilters.offline) activeFilters.add('offline');
+                if (state.viewFilters.missing) activeFilters.add('missing');
+                if (state.viewFilters.recommend) activeFilters.add('recommend');
+
+                if (activeFilters.size === 0) return true;
+                for (const tag of tags) {
+                    if (activeFilters.has(tag)) return true;
+                }
+                return false;
+            });
+
+            const getStatusRank = (status) => {
+                const s = String(status || '').toLowerCase();
+                if (s === 'missing') return 0;
+                if (s === 'offline') return 1;
+                if (s === 'found') return 2;
+                return 0;
+            };
+
+            const { field, direction } = state.comparisonViewSort;
+            const dir = direction === 'asc' ? 1 : -1;
+
+            filtered.sort((a, b) => {
+                if (field === 'name') return dir * String(a.name).localeCompare(String(b.name));
+                if (field === 'file1' || field === 'file2') {
+                    const rankA = getStatusRank(a[field]);
+                    const rankB = getStatusRank(b[field]);
+                    if (rankA !== rankB) return dir * (rankA - rankB);
+                    return String(a.name).localeCompare(String(b.name));
+                }
+                if (field === 'inAd') {
+                    const valA = a.inAd === 'yes' ? 1 : 0;
+                    const valB = b.inAd === 'yes' ? 1 : 0;
+                    if (valA !== valB) return dir * (valA - valB);
+                    return String(a.name).localeCompare(String(b.name));
+                }
+                return String(a.name).localeCompare(String(b.name));
+            });
+
+            const displayName1 = state.displayName1 || 'Source 1';
+            const displayName2 = state.displayName2 || 'Source 2';
+
+            const header = [
+                'Device',
+                `${displayName1} Status`,
+                `${displayName2} Status`,
+                'In AD',
+                'Match Type',
+                `${displayName1} Last Seen`,
+                `${displayName2} Last Seen`,
+                'Recommend Removal'
+            ];
+
+            const csvRows = [header];
+
+            filtered.forEach(row => {
+                const recommendRemoval = (() => {
+                    const checks = [
+                        qualifiesForRemoval(row.file1, row.file1LastSeen),
+                        qualifiesForRemoval(row.file2, row.file2LastSeen)
+                    ];
+                    if (data.ad_attached) {
+                        checks.push(row.inAd === 'no');
+                    }
+                    return checks.length > 0 && checks.every(Boolean);
+                })();
+
+                csvRows.push([
+                    row.name || '',
+                    row.file1 || '',
+                    row.file2 || '',
+                    row.inAd || '',
+                    row.matchType || '',
+                    row.file1LastSeen || '',
+                    row.file2LastSeen || '',
+                    recommendRemoval ? 'yes' : 'no'
+                ]);
+            });
+
+            const escapeCsv = (value) => {
+                const v = String(value ?? '');
+                if (v.includes('"') || v.includes(',') || v.includes('\n')) {
+                    return `"${v.replace(/"/g, '""')}"`;
+                }
+                return v;
+            };
+
+            const csvContent = csvRows.map(row => row.map(escapeCsv).join(',')).join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `comparison_${state.clientName || 'export'}_${Date.now()}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
             URL.revokeObjectURL(url);
         }
 
@@ -3258,6 +3663,23 @@
                     ? `${clientName} - ${displayName1} vs ${displayName2}`
                     : `${displayName1} vs ${displayName2}`;
 
+                const buildHistorySignature = (payload) => {
+                    const base = {
+                        clientName: (clientName || '').trim(),
+                        file1Source: (state.file1.sourceType || '').trim(),
+                        file2Source: (state.file2.sourceType || '').trim(),
+                        stats: payload.stats || {},
+                        only_in_file1: payload.only_in_file1 || [],
+                        only_in_file2: payload.only_in_file2 || [],
+                        in_both: payload.in_both || [],
+                        prefix_matches: payload.prefix_matches || [],
+                        only_in_ad: payload.only_in_ad || []
+                    };
+                    return JSON.stringify(base);
+                };
+
+                const signature = buildHistorySignature(data);
+
                 // Check for existing entry with same client/sources
                 const isDuplicate = (item) => {
                     // Normalize values for comparison (handle null/undefined)
@@ -3274,9 +3696,14 @@
                         itemSource2 === currentSource2;
                 };
 
+                if (history[0] && history[0].signature === signature) {
+                    console.log('Skipping duplicate history save (same signature as most recent)');
+                    return;
+                }
+
                 // Remove any duplicate entries (update instead of duplicate)
                 const beforeCount = history.length;
-                history = history.filter(item => !isDuplicate(item));
+                history = history.filter(item => !isDuplicate(item) && item.signature !== signature);
                 const afterCount = history.length;
 
                 console.log('Saving to history:', {
@@ -3297,7 +3724,8 @@
                     file1Source: state.file1.sourceType,
                     file2Source: state.file2.sourceType,
                     file1Offline: state.file1.offlineDevices,
-                    file2Offline: state.file2.offlineDevices
+                    file2Offline: state.file2.offlineDevices,
+                    signature: signature
                 };
 
                 history.unshift(newEntry);
@@ -3484,7 +3912,7 @@
 
             if (cache) {
                 console.log('Using cached data for site:', siteName, 'Slot:', fileId);
-                    await loadS1FromCache(fileId, cache.data, siteName, siteId);
+                await loadS1FromCache(fileId, cache.data, siteName, siteId);
                 return;
             }
 
@@ -3511,6 +3939,7 @@
         async function loadS1FromCache(fileId, data, siteName, siteId) {
             // This is essentially parts of fetchSentinelOneEndpoints but without the fetch
             const endpoints = data.endpoints;
+            state.s1EndpointsByFile[fileId] = endpoints;
 
             // Add site_id to data so handleSentinelOneUploadSuccess can save it
             data.site_id = siteId;
@@ -3575,6 +4004,7 @@
                 if (data.endpoints.length === 0) {
                     throw new Error('No endpoints found in SentinelOne');
                 }
+                state.s1EndpointsByFile[fileId] = data.endpoints;
 
                 // Cache the fresh data
                 setCache('S1', siteId || 'all', siteName, data, {
@@ -3680,7 +4110,7 @@
 
             if (cache) {
                 console.log('Using cached data for organization:', orgName, 'Slot:', fileId);
-                    await loadNinjaFromCache(fileId, cache.data, orgName, orgId || 'all');
+                await loadNinjaFromCache(fileId, cache.data, orgName, orgId || 'all');
                 return;
             }
 
@@ -3749,12 +4179,13 @@
 
                     let statusIcons = '';
                     if (s1Available && ninjaAvailable) {
-                        statusIcons = '<span class="client-status-icons">🛡️ 🥷</span>';
+                        statusIcons = '<span class="client-status-icons"><img class="s1-icon" src="/static/sentinelone-logo.svg" alt="SentinelOne"><img class="ninja-icon" src="/static/ninjaone-logo.svg" alt="NinjaRMM"></span>';
                     } else if (s1Available) {
-                        statusIcons = '<span class="client-status-icons">🛡️</span>';
+                        statusIcons = '<span class="client-status-icons"><img class="s1-icon" src="/static/sentinelone-logo.svg" alt="SentinelOne"></span>';
                     } else if (ninjaAvailable) {
-                        statusIcons = '<span class="client-status-icons">🥷</span>';
+                        statusIcons = '<span class="client-status-icons"><img class="ninja-icon" src="/static/ninjaone-logo.svg" alt="NinjaRMM"></span>';
                     }
+
 
                     return `
                         <div class="site-item ${matchedClass}" 
@@ -4227,6 +4658,7 @@
         function displayResults(data, isHistoryLoad = false) {
             const resultsSection = document.getElementById('results-section');
             const uploadSection = document.querySelector('.source-section');
+            const resultsClientName = document.getElementById('results-client-name');
 
             // Show results
             resultsSection.classList.add('visible');
@@ -4243,6 +4675,16 @@
             // Save to history only if it's a new comparison
             if (!isHistoryLoad) {
                 saveToHistory(data);
+            }
+
+            if (resultsClientName) {
+                if (state.clientName) {
+                    resultsClientName.textContent = `Client: ${state.clientName}`;
+                    resultsClientName.style.display = 'block';
+                } else {
+                    resultsClientName.textContent = '';
+                    resultsClientName.style.display = 'none';
+                }
             }
 
             // Get file names
@@ -4329,13 +4771,26 @@
                         btn2.disabled = !canRefresh2;
                     }
 
-                    const sourceIcon1 = displayName1 === 'SentinelOne' ? '🛡️' : displayName1 === 'NinjaRMM' ? '🥷' : '📄';
+                    const sourceIcon1 = displayName1 === 'SentinelOne'
+                        ? '<img class="source-icon-img s1-icon" src="/static/sentinelone-logo.svg" alt="SentinelOne">'
+                        : displayName1 === 'NinjaRMM'
+                            ? '<img class="source-icon-img ninja-icon" src="/static/ninjaone-logo.svg" alt="NinjaRMM">'
+                            : '📄';
                     const sourceMeta1 = `${data.stats.unique_file1} ${displayName1 === 'SentinelOne' ? 'endpoints' : 'devices'}`;
-                    if (text1) text1.textContent = `${sourceIcon1} Refresh ${displayName1} (${sourceMeta1})`;
+                    if (text1) {
+                        text1.innerHTML = `${sourceIcon1} Refresh (${sourceMeta1})`;
+                    }
 
-                    const sourceIcon2 = displayName2 === 'SentinelOne' ? '🛡️' : displayName2 === 'NinjaRMM' ? '🥷' : '📄';
+                    const sourceIcon2 = displayName2 === 'SentinelOne'
+                        ? '<img class="source-icon-img s1-icon" src="/static/sentinelone-logo.svg" alt="SentinelOne">'
+                        : displayName2 === 'NinjaRMM'
+                            ? '<img class="source-icon-img ninja-icon" src="/static/ninjaone-logo.svg" alt="NinjaRMM">'
+                            : '📄';
                     const sourceMeta2 = `${data.stats.unique_file2} ${displayName2 === 'SentinelOne' ? 'endpoints' : 'devices'}`;
-                    if (text2) text2.textContent = `${sourceIcon2} Refresh ${displayName2} (${sourceMeta2})`;
+                    if (text2) {
+                        text2.innerHTML = `${sourceIcon2} Refresh (${sourceMeta2})`;
+                    }
+
                 } else {
                     dataSourcesInfo.style.display = 'none';
                 }
@@ -4360,13 +4815,12 @@
             const adTabBtn = document.getElementById('tab-btn-ad');
             const adTabCount = document.getElementById('tab-count-ad');
             if (adTabBtn && adTabCount) {
-                if (data.ad_attached && data.only_in_ad) {
-                    adTabBtn.style.display = 'inline-flex';
-                    adTabCount.textContent = data.only_in_ad.length;
-                } else {
-                    adTabBtn.style.display = 'none';
-                }
+                state.ad.attached = !!data.ad_attached;
+                adTabCount.textContent = data.ad_attached && data.only_in_ad ? data.only_in_ad.length : 0;
             }
+
+            setActiveTab('comparison-view');
+            updateTabVisibility();
 
             // Value lists - check against offline devices for visual indicator
             const offline1Names = new Set((state.file1.offlineDevices || []).map(d => d.name));
@@ -4424,32 +4878,100 @@
             // Scroll to results
             resultsSection.scrollIntoView({ behavior: 'smooth' });
 
-            // Store for testing view search
+            // Store for Comparison View search
             state.currentComparisonData = data;
             state.displayName1 = displayName1;
             state.displayName2 = displayName2;
 
-            // Render testing view
-            renderTestingView();
+            // Render Comparison View
+            renderComparisonView();
 
             // Render offline devices section
             renderOfflineDevices();
         }
 
-        function renderTestingView(searchTerm = '') {
-            const container = document.getElementById('testing-table-body');
+        function renderComparisonView(searchTerm = '') {
+            const container = document.getElementById('comparison-table-body');
             const data = state.currentComparisonData;
             if (!data) return;
 
             // Update headers
-            document.getElementById('testing-header-file1').textContent = `${state.displayName1} Status`;
-            document.getElementById('testing-header-file2').textContent = `${state.displayName2} Status`;
+            document.getElementById('comparison-header-file1').textContent = `${state.displayName1} Status`;
+            document.getElementById('comparison-header-file2').textContent = `${state.displayName2} Status`;
+
+            const showNinjaLastContact = state.file2.sourceType === 'NinjaRMM';
+            const showS1LastContactFile1 = state.file1.sourceType === 'SentinelOne';
+            const showS1LastContactFile2 = state.file2.sourceType === 'SentinelOne';
 
             // Show/Hide AD column header
-            const adHeader = document.getElementById('testing-header-ad');
+            const adHeader = document.getElementById('comparison-header-ad');
             if (adHeader) {
                 adHeader.style.display = data.ad_attached ? 'table-cell' : 'none';
             }
+
+            const ninjaDeviceMap = new Map((state.ninjaDevices || []).map(device => [device.name, device]));
+            const ninjaDeviceNormMap = new Map();
+            const ninjaDevicePrefixMap = new Map();
+            (state.ninjaDevices || []).forEach(device => {
+                const norm = normalizeDeviceName(device.name);
+                if (norm && !ninjaDeviceNormMap.has(norm)) {
+                    ninjaDeviceNormMap.set(norm, device);
+                }
+                if (norm && norm.length >= 10) {
+                    const maxLen = Math.min(15, norm.length);
+                    for (let plen = 10; plen <= maxLen; plen += 1) {
+                        const prefix = norm.slice(0, plen);
+                        if (!ninjaDevicePrefixMap.has(prefix)) {
+                            ninjaDevicePrefixMap.set(prefix, device);
+                        }
+                    }
+                }
+            });
+
+            const s1MapsByFile = {};
+            const getS1Maps = (fileId) => {
+                const key = String(fileId);
+                if (s1MapsByFile[key]) return s1MapsByFile[key];
+                const endpoints = state.s1EndpointsByFile[key] || [];
+                const map = new Map(endpoints.map(ep => [ep.name, ep]));
+                const normMap = new Map();
+                const prefixMap = new Map();
+                endpoints.forEach(ep => {
+                    const norm = normalizeDeviceName(ep.name);
+                    if (norm && !normMap.has(norm)) {
+                        normMap.set(norm, ep);
+                    }
+                    if (norm && norm.length >= 10) {
+                        const maxLen = Math.min(15, norm.length);
+                        for (let plen = 10; plen <= maxLen; plen += 1) {
+                            const prefix = norm.slice(0, plen);
+                            if (!prefixMap.has(prefix)) {
+                                prefixMap.set(prefix, ep);
+                            }
+                        }
+                    }
+                });
+                s1MapsByFile[key] = { map, normMap, prefixMap };
+                return s1MapsByFile[key];
+            };
+            const lookupS1Device = (fileId, name) => {
+                const lookupName = name || '';
+                const lookupNorm = normalizeDeviceName(lookupName);
+                const { map, normMap, prefixMap } = getS1Maps(fileId);
+                let device = map.get(lookupName);
+                if (!device && lookupNorm) {
+                    device = normMap.get(lookupNorm);
+                }
+                if (!device && lookupNorm && lookupNorm.length >= 10) {
+                    const maxLen = Math.min(15, lookupNorm.length);
+                    for (let plen = maxLen; plen >= 10; plen -= 1) {
+                        const prefix = lookupNorm.slice(0, plen);
+                        device = prefixMap.get(prefix);
+                        if (device) break;
+                    }
+                }
+                return device || null;
+            };
 
             // Prepare consolidated list
             const devices = new Map(); // key -> { displayName, file1Status, file2Status, linked, sortName }
@@ -4462,6 +4984,27 @@
             const offline1Map = new Map((state.file1.offlineDevices || []).map(d => [d.name, d.lastSeen]));
             const offline2Map = new Map((state.file2.offlineDevices || []).map(d => [d.name, d.lastSeen]));
 
+            // Helper to check if a Ninja device is offline based on lastContact
+            const cutoffTimestamp = (Date.now() / 1000) - (state.offlineDaysThreshold * 24 * 60 * 60);
+            const isNinjaDeviceOffline = (deviceName) => {
+                if (offline2.has(deviceName)) return true;
+                // Also check the actual device lastContact from ninjaDevices
+                const device = ninjaDeviceMap.get(deviceName) || ninjaDeviceNormMap.get(normalizeDeviceName(deviceName));
+                if (device && device.lastContact && device.lastContact < cutoffTimestamp) {
+                    return true;
+                }
+                return false;
+            };
+
+            const getNinjaDeviceLastSeen = (deviceName) => {
+                if (offline2Map.has(deviceName)) return offline2Map.get(deviceName);
+                const device = ninjaDeviceMap.get(deviceName) || ninjaDeviceNormMap.get(normalizeDeviceName(deviceName));
+                if (device && device.lastContact) {
+                    return new Date(device.lastContact * 1000).toISOString();
+                }
+                return null;
+            };
+
             // 1. Process Prefix Matches (Concatenation Fix)
             (data.prefix_matches || []).forEach(m => {
                 const key = `prefix_${m.file1}_${m.file2}`;
@@ -4471,18 +5014,18 @@
                 handledInPrefix.add(m.file2);
 
                 const displayName = `
-                    <div class="testing-device-group">
-                        <div class="testing-device-sub"><span class="source-indicator s1">S1</span> ${escapeHtml(m.file1)}</div>
-                        <div class="testing-device-sub"><span class="source-indicator ninja">N</span> ${escapeHtml(m.file2)}</div>
+                    <div class="comparison-device-group">
+                        <div class="comparison-device-sub"><span class="source-indicator s1">S1</span> ${escapeHtml(m.file1)}</div>
+                        <div class="comparison-device-sub"><span class="source-indicator ninja">N</span> ${escapeHtml(m.file2)}</div>
                     </div>
                 `;
 
                 devices.set(key, {
                     displayName: displayName,
                     file1: offline1.has(m.file1) ? 'offline' : 'found',
-                    file2: offline2.has(m.file2) ? 'offline' : 'found',
+                    file2: isNinjaDeviceOffline(m.file2) ? 'offline' : 'found',
                     file1LastSeen: offline1Map.get(m.file1),
-                    file2LastSeen: offline2Map.get(m.file2),
+                    file2LastSeen: getNinjaDeviceLastSeen(m.file2),
                     inAd: m.in_ad,
                     linked: true,
                     sortName: m.file1, // Use S1 name for sorting
@@ -4513,16 +5056,47 @@
                 entry[`file${fileId}`] = status;
                 if (inAd !== null) entry.inAd = inAd; // Update if provided
                 if (status === 'offline') {
-                    entry[`file${fileId}LastSeen`] = fileId === 1 ? offline1Map.get(name) : offline2Map.get(name);
+                    entry[`file${fileId}LastSeen`] = fileId === 1 ? offline1Map.get(name) : getNinjaDeviceLastSeen(name);
                 }
                 if (fileId === 1) entry.rawFile1 = name;
                 if (fileId === 2) entry.rawFile2 = name;
+
+                if (status === 'missing' && fileId === 2) {
+                    const lookupName = name;
+                    const lookupNorm = normalizeDeviceName(lookupName);
+                    let ninjaDevice = ninjaDeviceMap.get(lookupName);
+                    if (!ninjaDevice && lookupNorm) {
+                        ninjaDevice = ninjaDeviceNormMap.get(lookupNorm);
+                    }
+                    if (!ninjaDevice && lookupNorm && lookupNorm.length >= 10) {
+                        const maxLen = Math.min(15, lookupNorm.length);
+                        for (let plen = maxLen; plen >= 10; plen -= 1) {
+                            const prefix = lookupNorm.slice(0, plen);
+                            ninjaDevice = ninjaDevicePrefixMap.get(prefix);
+                            if (ninjaDevice) break;
+                        }
+                    }
+                    if (ninjaDevice) {
+                        // Check if device is offline based on lastContact timestamp
+                        const cutoffTimestamp = (Date.now() / 1000) - (state.offlineDaysThreshold * 24 * 60 * 60);
+                        const isOffline = offline2.has(ninjaDevice.name) ||
+                            (ninjaDevice.lastContact && ninjaDevice.lastContact < cutoffTimestamp);
+                        entry.file2 = isOffline ? 'offline' : 'found';
+                        entry.rawFile2 = ninjaDevice.name;
+                        if (isOffline && ninjaDevice.lastContact) {
+                            entry.file2LastSeen = new Date(ninjaDevice.lastContact * 1000).toISOString();
+                        } else if (entry.file2 === 'offline') {
+                            entry.file2LastSeen = offline2Map.get(ninjaDevice.name) || null;
+                        }
+                    }
+                }
             };
+
 
             // 2. Process all other categories
             (data.results_common || []).forEach(item => {
                 setStatus(item.name, 1, offline1.has(item.name) ? 'offline' : 'found', item.in_ad);
-                setStatus(item.name, 2, offline2.has(item.name) ? 'offline' : 'found', item.in_ad);
+                setStatus(item.name, 2, isNinjaDeviceOffline(item.name) ? 'offline' : 'found', item.in_ad);
             });
 
             (data.results_file1 || []).forEach(item => {
@@ -4530,7 +5104,7 @@
             });
 
             (data.results_file2 || []).forEach(item => {
-                setStatus(item.name, 2, offline2.has(item.name) ? 'offline' : 'found', item.in_ad);
+                setStatus(item.name, 2, isNinjaDeviceOffline(item.name) ? 'offline' : 'found', item.in_ad);
             });
 
             (data.results_ad || []).forEach(item => {
@@ -4540,35 +5114,146 @@
             // Convert to array
             let items = Array.from(devices.values());
 
+            // Helper to calculate days since last seen
+            const getDaysSinceLastSeen = (lastSeenDate) => {
+                if (!lastSeenDate) return null;
+                const date = new Date(lastSeenDate);
+                const now = new Date();
+                return Math.floor((now - date) / (1000 * 60 * 60 * 24));
+            };
+
+            const removalThresholdDays = 90;
+            const isOfflineLongEnough = (lastSeenDate) => {
+                const days = getDaysSinceLastSeen(lastSeenDate);
+                return days !== null && days >= removalThresholdDays;
+            };
+
+            const qualifiesForRemoval = (status, lastSeenDate) => {
+                if (status === 'missing') return true;
+                if (status === 'offline') return isOfflineLongEnough(lastSeenDate);
+                return false;
+            };
+
+            const shouldRecommendRemoval = (item) => {
+                const checks = [
+                    qualifiesForRemoval(item.file1, item.file1LastSeen),
+                    qualifiesForRemoval(item.file2, item.file2LastSeen)
+                ];
+
+                if (data.ad_attached) {
+                    checks.push(!item.inAd);
+                }
+
+                return checks.length > 0 && checks.every(Boolean);
+            };
+
+            const getStatusRank = (status) => {
+                const s = String(status || '').toLowerCase();
+                if (s === 'missing') return 0;
+                if (s === 'offline') return 1;
+                if (s === 'found') return 2;
+                return 0;
+            };
+
+            const getOfflineDaysForField = (item, fieldName) => {
+                const lastSeen = fieldName === 'file1' ? item.file1LastSeen : item.file2LastSeen;
+                const days = getDaysSinceLastSeen(lastSeen);
+                return Number.isFinite(days) ? days : -1;
+            };
+
+            items.forEach(item => {
+                item.remediationNeeded = item.file2 === 'found' && (item.file1 === 'missing' || item.file1 === 'offline');
+                item.recommendRemoval = shouldRecommendRemoval(item);
+                item.remediationNote = state.remediationLog[item.rawFile2 || item.sortName] || '';
+                if (showS1LastContactFile1) {
+                    const s1Device = lookupS1Device('1', item.rawFile1 || item.sortName);
+                    const lastActiveMs = s1Device && s1Device.lastActive ? Date.parse(s1Device.lastActive) : NaN;
+                    item.s1LastContactLabelFile1 = Number.isFinite(lastActiveMs) ? formatTimeAgo(lastActiveMs) : '';
+                } else {
+                    item.s1LastContactLabelFile1 = '';
+                }
+                if (showS1LastContactFile2) {
+                    const s1Device = lookupS1Device('2', item.rawFile2 || item.sortName);
+                    const lastActiveMs = s1Device && s1Device.lastActive ? Date.parse(s1Device.lastActive) : NaN;
+                    item.s1LastContactLabelFile2 = Number.isFinite(lastActiveMs) ? formatTimeAgo(lastActiveMs) : '';
+                } else {
+                    item.s1LastContactLabelFile2 = '';
+                }
+                if (showNinjaLastContact) {
+                    const lookupName = item.rawFile2 || item.sortName;
+                    const lookupNorm = normalizeDeviceName(lookupName);
+                    let ninjaDevice = ninjaDeviceMap.get(lookupName);
+                    let matchSource = ninjaDevice ? 'exact' : '';
+                    if (!ninjaDevice && lookupNorm) {
+                        ninjaDevice = ninjaDeviceNormMap.get(lookupNorm);
+                        if (ninjaDevice) matchSource = 'normalized';
+                    }
+                    if (!ninjaDevice && lookupNorm && lookupNorm.length >= 10) {
+                        const maxLen = Math.min(15, lookupNorm.length);
+                        for (let plen = maxLen; plen >= 10; plen -= 1) {
+                            const prefix = lookupNorm.slice(0, plen);
+                            ninjaDevice = ninjaDevicePrefixMap.get(prefix);
+                            if (ninjaDevice) {
+                                matchSource = `prefix:${plen}`;
+                                break;
+                            }
+                        }
+                    }
+                    const lastContactMs = ninjaDevice && ninjaDevice.lastContact ? ninjaDevice.lastContact * 1000 : null;
+                    item.ninjaLastContactLabel = lastContactMs ? formatTimeAgo(lastContactMs) : '';
+                    item.ninjaLookupName = lookupName;
+                    item.ninjaLookupMatch = !!ninjaDevice;
+                    item.ninjaHasLastContact = !!lastContactMs;
+                    item.ninjaMatchSource = matchSource || 'none';
+                } else {
+                    item.ninjaLastContactLabel = '';
+                    item.ninjaLookupName = '';
+                    item.ninjaLookupMatch = false;
+                    item.ninjaHasLastContact = false;
+                    item.ninjaMatchSource = 'none';
+                }
+            });
+
             // 3. APPLY SORTING
-            const { field, direction } = state.testingViewSort;
+            const { field, direction } = state.comparisonViewSort;
             const dir = direction === 'asc' ? 1 : -1;
+
+            const compareStatus = (a, b, fieldName) => {
+                const rankA = getStatusRank(a[fieldName]);
+                const rankB = getStatusRank(b[fieldName]);
+                if (rankA !== rankB) return dir * (rankA - rankB);
+                if (String(a[fieldName]) === 'offline' && String(b[fieldName]) === 'offline') {
+                    const daysA = getOfflineDaysForField(a, fieldName);
+                    const daysB = getOfflineDaysForField(b, fieldName);
+                    if (daysA !== daysB) return dir * (daysA - daysB);
+                }
+                return a.sortName.localeCompare(b.sortName);
+            };
 
             items.sort((a, b) => {
                 if (field === 'name') {
                     return dir * a.sortName.localeCompare(b.sortName);
-                } else if (field === 'inAd') {
+                }
+                if (field === 'file1' || field === 'file2') {
+                    return compareStatus(a, b, field);
+                }
+                if (field === 'inAd') {
                     const valA = a.inAd ? 1 : 0;
                     const valB = b.inAd ? 1 : 0;
                     if (valA !== valB) return dir * (valA - valB);
                     return a.sortName.localeCompare(b.sortName);
-                } else {
-                    // Sort by status: Found (2) > Offline (1) > Missing (0)
-                    const getRank = (status) => {
-                        const s = String(status || '').toLowerCase();
-                        if (s === 'found') return 2;
-                        if (s === 'offline') return 1;
-                        return 0;
-                    };
-                    const rankA = getRank(a[field]);
-                    const rankB = getRank(b[field]);
-                    if (rankA !== rankB) return dir * (rankA - rankB);
-                    return a.sortName.localeCompare(b.sortName); // Tie-break with name
                 }
+                if (field === 'remediation') {
+                    const rankA = a.recommendRemoval ? 2 : (a.remediationNeeded ? 1 : 0);
+                    const rankB = b.recommendRemoval ? 2 : (b.remediationNeeded ? 1 : 0);
+                    if (rankA !== rankB) return dir * (rankA - rankB);
+                    return a.sortName.localeCompare(b.sortName);
+                }
+                return a.sortName.localeCompare(b.sortName);
             });
 
             // 4. Update Header UI
-            document.querySelectorAll('.testing-table th').forEach(th => {
+            document.querySelectorAll('.comparison-table th').forEach(th => {
                 th.classList.remove('sort-asc', 'sort-desc');
                 if (th.dataset.sort === field) {
                     th.classList.add(`sort-${direction}`);
@@ -4581,13 +5266,26 @@
                 items = items.filter(i => i.sortName.toLowerCase().includes(term));
             }
 
-            // Helper to calculate days since last seen
-            const getDaysSinceLastSeen = (lastSeenDate) => {
-                if (!lastSeenDate) return null;
-                const date = new Date(lastSeenDate);
-                const now = new Date();
-                return Math.floor((now - date) / (1000 * 60 * 60 * 24));
-            };
+            const activeFilters = new Set();
+            if (state.viewFilters.found) activeFilters.add('found');
+            if (state.viewFilters.offline) activeFilters.add('offline');
+            if (state.viewFilters.missing) activeFilters.add('missing');
+            if (state.viewFilters.recommend) activeFilters.add('recommend');
+
+            if (activeFilters.size > 0) {
+                items = items.filter(item => {
+                    const tags = new Set();
+                    if (item.file1 === 'missing' || item.file2 === 'missing') tags.add('missing');
+                    if (item.file1 === 'offline' || item.file2 === 'offline') tags.add('offline');
+                    if (item.file1 === 'found' && item.file2 === 'found') tags.add('found');
+                    if (item.recommendRemoval) tags.add('recommend');
+
+                    for (const tag of tags) {
+                        if (activeFilters.has(tag)) return true;
+                    }
+                    return false;
+                });
+            }
 
             const getStatusBadge = (status, lastSeenDate) => {
                 if (status === 'found') return '<span class="status-badge status-found">✅ Found</span>';
@@ -4599,12 +5297,11 @@
                 return '<span class="status-badge status-missing">❌ Missing</span>';
             };
 
-            const ninjaDeviceMap = new Map((state.ninjaDevices || []).map(device => [device.name, device]));
             const now = Date.now();
             const fiveMinutesAgo = now - (5 * 60 * 1000);
 
             container.innerHTML = items.map(item => {
-                const needsRemediation = item.file2 === 'found' && (item.file1 === 'missing' || item.file1 === 'offline');
+                const needsRemediation = item.remediationNeeded;
 
                 // Check if device is actually online (last contact within 5 minutes)
                 const deviceName = item.rawFile2 || item.sortName;
@@ -4612,13 +5309,26 @@
                 const lastContact = device && device.lastContact ? device.lastContact * 1000 : 0;
                 const isDeviceOnline = lastContact > fiveMinutesAgo;
 
-                const remediationCell = needsRemediation ?
+                const recommendRemoval = item.recommendRemoval;
+                const recommendBadge = recommendRemoval
+                    ? '<span class="status-badge status-remove">Recommend: remove</span>'
+                    : '';
+
+                const remediationButton = needsRemediation ?
                     `<button class="remediation-btn"
                             data-device-name="${escapeHtml(deviceName)}"
                             ${!isDeviceOnline || !state.remediationScriptId ? 'disabled' : ''}
                             title="${!state.remediationScriptId ? 'Configure script in Settings' : !isDeviceOnline ? 'Device not online in NinjaRMM (last contact > 5 min)' : 'Install SentinelOne'}">
                         🛠️ Fix S1
-                    </button>` : '-';
+                    </button>` : (recommendRemoval ? '' : '<span>-</span>');
+
+                const remediationCell = `
+                    <div class="remediation-cell">
+                        ${remediationButton}
+                        ${recommendBadge}
+                        ${item.remediationNote ? `<div class="last-contact">Remediation: ${escapeHtml(item.remediationNote)}</div>` : ''}
+                    </div>
+                `;
 
                 return `
                     <tr data-device-name="${escapeHtml(deviceName)}">
@@ -4628,8 +5338,16 @@
                                 ${item.linked ? '<span class="device-link-icon" title="Matched via prefix">🔗</span>' : ''}
                             </div>
                         </td>
-                        <td>${getStatusBadge(item.file1, item.file1LastSeen)}</td>
-                        <td>${getStatusBadge(item.file2, item.file2LastSeen)}</td>
+                        <td>
+                            ${getStatusBadge(item.file1, item.file1LastSeen)}
+                            ${showS1LastContactFile1 && item.s1LastContactLabelFile1 ? `<div class="last-contact">Last contact ${escapeHtml(item.s1LastContactLabelFile1)}</div>` : ''}
+                        </td>
+                        <td>
+                            ${getStatusBadge(item.file2, item.file2LastSeen)}
+                            ${showNinjaLastContact && item.ninjaLastContactLabel ? `<div class="last-contact">Last contact ${escapeHtml(item.ninjaLastContactLabel)}</div>` : ''}
+                            ${showS1LastContactFile2 && item.s1LastContactLabelFile2 ? `<div class="last-contact">Last contact ${escapeHtml(item.s1LastContactLabelFile2)}</div>` : ''}
+                            ${showNinjaLastContact && state.debugLastContact ? `<div class="last-contact debug">Ninja lookup: ${escapeHtml(item.ninjaLookupName || '')} (${item.ninjaMatchSource}, lastContact: ${item.ninjaHasLastContact ? 'yes' : 'no'})</div>` : ''}
+                        </td>
                         ${data.ad_attached ? `<td>${item.inAd ? '<span class="status-badge status-found">✅ AD</span>' : '<span class="status-badge status-missing">❌ No AD</span>'}</td>` : ''}
                         <td>${remediationCell}</td>
                     </tr>
@@ -4643,14 +5361,66 @@
             return div.innerHTML;
         }
 
+        function setActiveTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+            const content = document.getElementById(`tab-${tabId}`);
+            if (btn && content) {
+                btn.classList.add('active');
+                content.classList.add('active');
+            }
+        }
+
+        function updateTabVisibility() {
+            const showAll = state.showAllViews;
+            const adAvailable = !!(state.ad && state.ad.attached);
+            const tabsEl = document.querySelector('.tabs');
+            if (tabsEl) {
+                if (!showAll) {
+                    tabsEl.classList.add('tabs-single');
+                } else {
+                    tabsEl.classList.remove('tabs-single');
+                }
+            }
+
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                const tab = btn.dataset.tab;
+                if (tab === 'comparison-view') {
+                    btn.style.display = 'inline-flex';
+                    return;
+                }
+                if (tab === 'only-ad') {
+                    btn.style.display = showAll && adAvailable ? 'inline-flex' : 'none';
+                    return;
+                }
+                btn.style.display = showAll ? 'inline-flex' : 'none';
+            });
+
+            document.querySelectorAll('.tab-content').forEach(content => {
+                const tabId = content.id.replace('tab-', '');
+                if (tabId === 'comparison-view') {
+                    content.style.display = '';
+                    return;
+                }
+                if (tabId === 'only-ad') {
+                    content.style.display = showAll && adAvailable ? '' : 'none';
+                    return;
+                }
+                content.style.display = showAll ? '' : 'none';
+            });
+
+            const activeBtn = document.querySelector('.tab-btn.active');
+            if (!activeBtn || activeBtn.style.display === 'none') {
+                setActiveTab('comparison-view');
+            }
+        }
+
         // Tab switching
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-                btn.classList.add('active');
-                document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+                setActiveTab(btn.dataset.tab);
             });
         });
 
@@ -4846,6 +5616,8 @@
 
         const exportBtn = document.getElementById('export-btn');
         if (exportBtn) exportBtn.addEventListener('click', exportToHTML);
+        const exportCsvBtn = document.getElementById('export-csv-btn');
+        if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportToCSV);
 
         const refreshBtn1 = document.getElementById('refresh-data-1');
         if (refreshBtn1) refreshBtn1.addEventListener('click', () => refreshSource('1'));
@@ -5055,24 +5827,43 @@
             }
         });
 
-        // Sorting for Testing View
-        document.querySelectorAll('.testing-table th').forEach(th => {
+        // Sorting for Comparison View
+        document.querySelectorAll('.comparison-table th').forEach(th => {
             th.addEventListener('click', () => {
                 const field = th.dataset.sort;
-                if (state.testingViewSort.field === field) {
-                    state.testingViewSort.direction = state.testingViewSort.direction === 'asc' ? 'desc' : 'asc';
+                if (state.comparisonViewSort.field === field) {
+                    state.comparisonViewSort.direction = state.comparisonViewSort.direction === 'asc' ? 'desc' : 'asc';
                 } else {
-                    state.testingViewSort.field = field;
-                    state.testingViewSort.direction = 'asc';
+                    state.comparisonViewSort.field = field;
+                    state.comparisonViewSort.direction = 'asc';
                 }
-                renderTestingView(document.getElementById('testing-search').value);
+                renderComparisonView(document.getElementById('comparison-search').value);
             });
         });
 
-        // Testing view search
-        document.getElementById('testing-search').addEventListener('input', (e) => {
-            renderTestingView(e.target.value);
+        // Comparison View search
+        document.getElementById('comparison-search').addEventListener('input', (e) => {
+            renderComparisonView(e.target.value);
         });
+
+        const filterFound = document.getElementById('filter-show-found');
+        const filterOffline = document.getElementById('filter-show-offline');
+        const filterMissing = document.getElementById('filter-show-missing');
+        const filterRecommend = document.getElementById('filter-show-recommend');
+        const onFilterChange = () => {
+            state.viewFilters = {
+                found: filterFound ? filterFound.checked : true,
+                offline: filterOffline ? filterOffline.checked : true,
+                missing: filterMissing ? filterMissing.checked : true,
+                recommend: filterRecommend ? filterRecommend.checked : true
+            };
+            localStorage.setItem('viewFilters', JSON.stringify(state.viewFilters));
+            renderComparisonView(document.getElementById('comparison-search').value);
+        };
+        if (filterFound) filterFound.addEventListener('change', onFilterChange);
+        if (filterOffline) filterOffline.addEventListener('change', onFilterChange);
+        if (filterMissing) filterMissing.addEventListener('change', onFilterChange);
+        if (filterRecommend) filterRecommend.addEventListener('change', onFilterChange);
 
         // Main client selection button
         document.getElementById('select-client-main-btn').addEventListener('click', () => {
@@ -5129,6 +5920,9 @@
                     s1Data = await fetchFromS1(s1Id, s1Name);
                     const s1Total = (typeof s1Data.count === 'number') ? s1Data.count : (s1Data.endpoints ? s1Data.endpoints.length : 0);
                     document.getElementById('s1-count').textContent = `${s1Total} endpoints`;
+                    if (s1Data && s1Data.endpoints) {
+                        state.s1EndpointsByFile['1'] = s1Data.endpoints;
+                    }
                 }
 
                 if (ninjaId) {
@@ -5428,7 +6222,7 @@
             }
 
             const savedAdDays = localStorage.getItem('adDays');
-            if (savedAdDays) {
+            if (savedAdDays !== null) {
                 state.ad.days = parseInt(savedAdDays);
                 const sel = document.getElementById('ad-days-select');
                 if (sel) sel.value = savedAdDays;
@@ -5450,6 +6244,61 @@
                 const toggle = document.getElementById('force-refresh-toggle');
                 if (toggle) toggle.checked = state.forceRefreshOnSelect;
             }
+
+            const savedShowAllViews = localStorage.getItem('showAllViews');
+            if (savedShowAllViews !== null) {
+                state.showAllViews = savedShowAllViews === 'true';
+            }
+            const showAllToggle = document.getElementById('show-all-views-toggle');
+            if (showAllToggle) showAllToggle.checked = state.showAllViews;
+
+            const savedDebugLastContact = localStorage.getItem('debugLastContact');
+            if (savedDebugLastContact !== null) {
+                state.debugLastContact = savedDebugLastContact === 'true';
+            }
+            const debugLastContactToggle = document.getElementById('debug-last-contact-toggle');
+            if (debugLastContactToggle) debugLastContactToggle.checked = state.debugLastContact;
+
+            const savedViewFilters = localStorage.getItem('viewFilters');
+            if (savedViewFilters) {
+                try {
+                    const parsed = JSON.parse(savedViewFilters);
+                    if (parsed && typeof parsed === 'object') {
+                        state.viewFilters = { ...state.viewFilters, ...parsed };
+                    }
+                } catch (e) {
+                    console.error('Failed to parse view filters:', e);
+                }
+            }
+
+            const filterFound = document.getElementById('filter-show-found');
+            const filterOffline = document.getElementById('filter-show-offline');
+            const filterMissing = document.getElementById('filter-show-missing');
+            const filterRecommend = document.getElementById('filter-show-recommend');
+            if (filterFound) filterFound.checked = !!state.viewFilters.found;
+            if (filterOffline) filterOffline.checked = !!state.viewFilters.offline;
+            if (filterMissing) filterMissing.checked = !!state.viewFilters.missing;
+            if (filterRecommend) filterRecommend.checked = !!state.viewFilters.recommend;
+
+            updateTabVisibility();
+        }
+
+        const showAllViewsToggle = document.getElementById('show-all-views-toggle');
+        if (showAllViewsToggle) {
+            showAllViewsToggle.addEventListener('change', (e) => {
+                state.showAllViews = e.target.checked;
+                localStorage.setItem('showAllViews', state.showAllViews);
+                updateTabVisibility();
+            });
+        }
+
+        const debugLastContactToggle = document.getElementById('debug-last-contact-toggle');
+        if (debugLastContactToggle) {
+            debugLastContactToggle.addEventListener('change', (e) => {
+                state.debugLastContact = e.target.checked;
+                localStorage.setItem('debugLastContact', state.debugLastContact);
+                renderComparisonView(document.getElementById('comparison-search').value);
+            });
         }
 
         // Load available NinjaRMM devices for AD device picker
@@ -5567,9 +6416,9 @@
                 updateScriptInfo(scriptId);
                 showToast('Remediation script configured', 'success');
 
-                // Re-render testing view to update button states
+                // Re-render Comparison View to update button states
                 if (state.currentComparisonData) {
-                    renderTestingView(document.getElementById('testing-search').value);
+                    renderComparisonView(document.getElementById('comparison-search').value);
                 }
             } else {
                 state.remediationScriptId = null;
@@ -5665,7 +6514,8 @@
                 countEl.textContent = state.ad.attached ? `${state.ad.count} computers` : 'Not fetched';
             }
 
-            const statusText = state.ad.attached ? `Attached (${state.ad.days}d, ${state.ad.count} computers)` : 'Not fetched';
+            const adDaysLabel = state.ad.days > 0 ? `${state.ad.days}d` : 'All time';
+            const statusText = state.ad.attached ? `Attached (${adDaysLabel}, ${state.ad.count} computers)` : 'Not fetched';
             if (statusEl) statusEl.textContent = statusText;
             if (statusElResults) statusElResults.textContent = statusText;
 
@@ -5727,7 +6577,7 @@
             }
 
             const client = state.clientName;
-            const days = state.ad.days || 30;
+            const days = Number.isFinite(state.ad.days) ? state.ad.days : 30;
 
             const btns = [
                 document.getElementById('fetch-ad-btn'),
@@ -5759,11 +6609,11 @@
                 progressDetailsList.forEach(detail => detail.textContent = 'Please wait while we collect Active Directory data');
             }
 
-                try {
-                    const endpoint = options.syncOnly ? '/ad/sync' : '/ad/trigger';
+            try {
+                const endpoint = options.syncOnly ? '/ad/sync' : '/ad/trigger';
 
-                    // Update progress for script execution
-                    if (!options.syncOnly && progressMsg) {
+                // Update progress for script execution
+                if (!options.syncOnly && progressMsg) {
                     setTimeout(() => {
                         progressMsg.textContent = 'Script running on domain controller...';
                         progressDetails.textContent = 'Querying Active Directory for computer accounts';
@@ -5771,51 +6621,51 @@
                     setTimeout(() => {
                         progressMsg.textContent = 'Waiting for results...';
                         progressDetails.textContent = 'Polling for inventory data from custom field';
-                        }, 5000);
-                    }
+                    }, 5000);
+                }
 
-                    await syncSessionFiles('ad');
+                await syncSessionFiles('ad');
 
-                    const triggerResp = await fetch(endpoint, {
+                const triggerResp = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        client,
+                        days,
+                        org_id: state.currentNinjaOrgId,
+                        device_id: state.ad.deviceId,
+                        script_id: state.ad.scriptId,
+                        file_id: '3',
+                        auto_attach: true,
+                        client_id: state.clientId
+                    })
+                });
+
+                const triggerData = await triggerResp.json();
+                if (!triggerData.success) throw new Error(triggerData.error || `Failed to ${options.syncOnly ? 'sync' : 'trigger'} AD inventory`);
+
+                let attachData = triggerData.attached ? triggerData : null;
+                if (!attachData) {
+                    // /ad/trigger or /ad/sync caches the snapshot server-side
+                    const attachResp = await fetch('/ad/attach', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             client,
                             days,
+                            file_id: '3',
                             org_id: state.currentNinjaOrgId,
                             device_id: state.ad.deviceId,
-                            script_id: state.ad.scriptId,
-                            file_id: '3',
-                            auto_attach: true,
                             client_id: state.clientId
                         })
                     });
 
-                    const triggerData = await triggerResp.json();
-                    if (!triggerData.success) throw new Error(triggerData.error || `Failed to ${options.syncOnly ? 'sync' : 'trigger'} AD inventory`);
+                    attachData = await attachResp.json();
+                    if (!attachData.success) throw new Error(attachData.error || 'Failed to attach AD inventory');
+                }
 
-                    let attachData = triggerData.attached ? triggerData : null;
-                    if (!attachData) {
-                        // /ad/trigger or /ad/sync caches the snapshot server-side
-                        const attachResp = await fetch('/ad/attach', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                client,
-                                days,
-                                file_id: '3',
-                                org_id: state.currentNinjaOrgId,
-                                device_id: state.ad.deviceId,
-                                client_id: state.clientId
-                            })
-                        });
-
-                        attachData = await attachResp.json();
-                        if (!attachData.success) throw new Error(attachData.error || 'Failed to attach AD inventory');
-                    }
-
-                    state.ad.attached = true;
-                    state.ad.count = attachData.row_count || 0;
+                state.ad.attached = true;
+                state.ad.count = attachData.row_count || 0;
                 localStorage.setItem('adAttached', 'true');
                 localStorage.setItem('adCount', state.ad.count);
                 state.adSource = {
@@ -5823,7 +6673,9 @@
                     uploaded: true,
                     sheet: attachData.sheets[0],
                     column: attachData.columns[0],
-                    filename: options.syncOnly ? `Active Directory (Sync: ${attachData.count})` : `Active Directory (${days}d)`,
+                    filename: options.syncOnly
+                        ? `Active Directory (Sync: ${attachData.count})`
+                        : `Active Directory (${days > 0 ? `${days}d` : 'All time'})`,
                     sourceType: 'Active Directory',
                     offlineDevices: []
                 };
@@ -5884,27 +6736,6 @@
             await runComparison();
         });
 
-        // Generate a new AD intake token (copy into server .env)
-        const adGenBtn = document.getElementById('ad-generate-token-btn');
-        if (adGenBtn) adGenBtn.addEventListener('click', async () => {
-            try {
-                const resp = await fetch('/ad/tokens/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csrf_token: csrfToken }) });
-                const data = await resp.json();
-                if (!data.success) throw new Error(data.error || 'Token generation failed');
-
-                const out = document.getElementById('ad-generated-token');
-                if (out) {
-                    out.value = data.token;
-                    out.focus();
-                    out.select();
-                }
-
-                showToast('Token generated. Copy it into .env and restart the server.', 'success');
-            } catch (err) {
-                showToast(err.message || 'Token generation failed', 'error');
-            }
-        });
-
         function updateScriptInfo(scriptId) {
             const script = state.availableScripts.find(s => s.id === scriptId);
             if (script) {
@@ -5926,6 +6757,9 @@
                 showToast('Please configure a remediation script in Settings', 'error');
                 return;
             }
+
+            const confirmRun = window.confirm(`Run remediation script on ${deviceName}?`);
+            if (!confirmRun) return;
 
             // Find the device in NinjaRMM devices
             const device = state.ninjaDevices.find(d => d.name === deviceName);
@@ -5964,13 +6798,17 @@
                     body: JSON.stringify({
                         device_id: device.id,
                         script_id: state.remediationScriptId,
+                        org_id: state.currentNinjaOrgId,
                         parameters: {}
                     })
                 });
 
+
                 const data = await response.json();
 
                 if (data.success) {
+                    state.remediationLog[deviceName] = `Triggered ${formatTimeAgo(Date.now())}`;
+                    renderComparisonView(document.getElementById('comparison-search').value);
                     showToast(`✅ Script triggered on ${deviceName}`, 'success');
                     if (button) {
                         button.classList.add('success');

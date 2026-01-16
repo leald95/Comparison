@@ -434,10 +434,10 @@ app.py (1,532 lines)
 │   └── POST /ninjarmm/upload
 ├── Routes - Active Directory (via Ninja)
 │   ├── POST /ad/trigger           # Trigger Ninja AD inventory script
-│   ├── POST /ad/intake            # Receive AD results (token auth)
+│   ├── POST /ad/intake            # Receive AD results (HMAC nonce auth)
+
 │   ├── GET  /ad/status            # Poll for snapshot availability
 │   ├── POST /ad/attach            # Attach AD snapshot into session (file_id=3)
-│   └── POST /ad/tokens/generate   # Generate new intake token (requires Basic Auth)
 └── Routes - Unified
     └── GET  /clients/unified
 ```
